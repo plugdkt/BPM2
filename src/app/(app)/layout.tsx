@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { NavBar } from "@/components/nav-bar";
+import { AppSidebar } from "@/components/app-sidebar";
 import { Toaster } from "@/components/ui/sonner";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -7,9 +7,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = session!.user;
 
   return (
-    <div className="min-h-screen bg-muted/20">
-      <NavBar userName={user.name} role={user.role} />
-      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+    <div className="flex min-h-screen bg-background">
+      <AppSidebar userName={user.name} role={user.role} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8">
+          {children}
+        </main>
+      </div>
       <Toaster />
     </div>
   );

@@ -1,17 +1,13 @@
+import { Wallet, TrendingDown, PiggyBank, Inbox } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { getAllocationSummaries } from "@/lib/budget";
 import { formatBaht } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BudgetBarChart } from "@/components/budget-bar-chart";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { StatCard } from "@/components/stat-card";
+import { DepartmentBudgetCard } from "@/components/department-budget-card";
+import { EmptyState } from "@/components/empty-state";
 
 export default async function DashboardPage({
   searchParams,
@@ -27,7 +23,13 @@ export default async function DashboardPage({
     : fiscalYears[0];
 
   if (!fiscalYear) {
-    return <p className="text-muted-foreground">ยังไม่มีข้อมูลปีงบประมาณในระบบ</p>;
+    return (
+      <EmptyState
+        icon={Inbox}
+        title="ยังไม่มีข้อมูลปีงบประมาณในระบบ"
+        description="ให้ผู้ดูแลระบบไปที่หน้า “จัดการงบประมาณ” เพื่อตั้งปีงบประมาณและจัดสรรงบก่อน"
+      />
+    );
   }
 
   const departmentId = user.role === "DEPT_STAFF" ? user.departmentId! : undefined;
@@ -50,87 +52,66 @@ export default async function DashboardPage({
     )
   );
 
+  const byDepartment = Object.entries(
+    summaries.reduce<Record<string, typeof summaries>>((acc, s) => {
+      (acc[s.departmentName] ??= []).push(s);
+      return acc;
+    }, {})
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">
-          ภาพรวมงบประมาณ ปีงบประมาณ {fiscalYear.yearBE}
-        </h1>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">ภาพรวมงบประมาณ</h1>
+        <p className="text-sm text-muted-foreground">ปีงบประมาณ {fiscalYear.yearBE}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              งบที่ได้รับจัดสรร
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {formatBaht(totalAllocated)}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              ใช้ไปแล้ว
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {formatBaht(totalExpense)}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              คงเหลือ
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {formatBaht(totalBalance)}
-          </CardContent>
-        </Card>
+        <StatCard
+          label="งบที่ได้รับจัดสรร"
+          value={formatBaht(totalAllocated)}
+          icon={Wallet}
+          tone="blue"
+        />
+        <StatCard label="ใช้ไปแล้ว" value={formatBaht(totalExpense)} icon={TrendingDown} tone="orange" />
+        <StatCard label="คงเหลือ" value={formatBaht(totalBalance)} icon={PiggyBank} tone="green" />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>เปรียบเทียบตามหมวดงบประมาณ</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <BudgetBarChart data={byCategory} />
-        </CardContent>
-      </Card>
+      {summaries.length === 0 ? (
+        <Card>
+          <CardContent>
+            <EmptyState
+              icon={Inbox}
+              title="ยังไม่มีการจัดสรรงบประมาณ"
+              description="เมื่อผู้ดูแลระบบจัดสรรงบให้สาขาวิชาแล้ว ข้อมูลจะแสดงที่นี่"
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>เปรียบเทียบตามหมวดงบประมาณ</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <BudgetBarChart data={byCategory} />
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>รายละเอียดตามสาขาวิชา / หมวดงบ</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>สาขาวิชา</TableHead>
-                <TableHead>หมวดงบ</TableHead>
-                <TableHead className="text-right">ได้รับจัดสรร</TableHead>
-                <TableHead className="text-right">ใช้ไป</TableHead>
-                <TableHead className="text-right">คงเหลือ</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {summaries.map((s) => (
-                <TableRow key={s.allocationId}>
-                  <TableCell>{s.departmentName}</TableCell>
-                  <TableCell>{s.categoryName}</TableCell>
-                  <TableCell className="text-right">{formatBaht(s.allocated)}</TableCell>
-                  <TableCell className="text-right">{formatBaht(s.expense)}</TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatBaht(s.balance)}
-                  </TableCell>
-                </TableRow>
+          <div>
+            <h2 className="mb-3 text-lg font-semibold tracking-tight">แยกตามสาขาวิชา</h2>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {byDepartment.map(([departmentName, rows]) => (
+                <DepartmentBudgetCard
+                  key={departmentName}
+                  departmentName={departmentName}
+                  rows={rows}
+                />
               ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

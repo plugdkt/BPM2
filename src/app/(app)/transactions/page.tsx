@@ -1,8 +1,10 @@
+import { Receipt } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { formatBaht, formatDateThai } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { TransactionTypeBadge } from "@/components/status-badges";
+import { EmptyState } from "@/components/empty-state";
 import {
   Table,
   TableBody,
@@ -55,36 +57,44 @@ export default async function TransactionsPage() {
           <CardTitle>รายการล่าสุด</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>วันที่</TableHead>
-                <TableHead>สาขาวิชา</TableHead>
-                <TableHead>หมวดงบ</TableHead>
-                <TableHead>ประเภท</TableHead>
-                <TableHead>รายละเอียด</TableHead>
-                <TableHead className="text-right">จำนวนเงิน</TableHead>
-                <TableHead>บันทึกโดย</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {transactions.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell>{formatDateThai(t.date)}</TableCell>
-                  <TableCell>{t.allocation.department.name}</TableCell>
-                  <TableCell>{t.allocation.category.name}</TableCell>
-                  <TableCell>
-                    <Badge variant={t.type === "EXPENSE" ? "destructive" : "secondary"}>
-                      {t.type === "EXPENSE" ? "รายจ่าย" : "รายรับ"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="max-w-64 truncate">{t.description}</TableCell>
-                  <TableCell className="text-right">{formatBaht(Number(t.amount))}</TableCell>
-                  <TableCell>{t.createdBy.name}</TableCell>
+          {transactions.length === 0 ? (
+            <EmptyState
+              icon={Receipt}
+              title="ยังไม่มีรายการ"
+              description="เพิ่มรายรับหรือรายจ่ายแรกด้วยฟอร์มด้านบน"
+            />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>วันที่</TableHead>
+                  <TableHead>สาขาวิชา</TableHead>
+                  <TableHead>หมวดงบ</TableHead>
+                  <TableHead>ประเภท</TableHead>
+                  <TableHead>รายละเอียด</TableHead>
+                  <TableHead className="text-right">จำนวนเงิน</TableHead>
+                  <TableHead>บันทึกโดย</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {transactions.map((t) => (
+                  <TableRow key={t.id}>
+                    <TableCell className="whitespace-nowrap">{formatDateThai(t.date)}</TableCell>
+                    <TableCell>{t.allocation.department.name}</TableCell>
+                    <TableCell>{t.allocation.category.name}</TableCell>
+                    <TableCell>
+                      <TransactionTypeBadge type={t.type} />
+                    </TableCell>
+                    <TableCell className="max-w-64 truncate">{t.description}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatBaht(Number(t.amount))}
+                    </TableCell>
+                    <TableCell>{t.createdBy.name}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>
