@@ -21,6 +21,10 @@ declare module "next-auth" {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Required outside Vercel (Docker, IIS/iisnode, etc.) — Auth.js can't
+  // auto-detect a trusted host there and rejects every request otherwise.
+  // Safe here since IIS bindings already control which hosts reach this app.
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [
