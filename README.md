@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BPM — ระบบบริหารจัดการงบประมาณสาขาวิชา
 
-## Getting Started
+ระบบเว็บสำหรับติดตามงบประมาณของแต่ละสาขาวิชา: ได้รับจัดสรรเท่าไหร่ ใช้ไปเท่าไหร่ คงเหลือเท่าไหร่ ออกรายงานรายเดือน/รายไตรมาสตามปีงบประมาณราชการไทย และโยกย้ายงบระหว่างหมวดได้ (ผ่านขั้นตอนอนุมัติ)
 
-First, run the development server:
+## Stack
+
+Next.js (App Router) + TypeScript · PostgreSQL + Prisma · Auth.js (credentials) · Tailwind + shadcn/ui · Recharts
+
+## เริ่มต้นใช้งาน (Dev)
 
 ```bash
+docker compose up -d        # เริ่ม Postgres
+npm install
+npx prisma migrate dev      # สร้างตารางในฐานข้อมูล
+npm run db:seed             # ข้อมูลตัวอย่าง + บัญชีทดสอบ
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+เปิด [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## บัญชีทดสอบ (หลัง db:seed)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+รหัสผ่านทั้งหมด: `password123`
 
-## Learn More
+| อีเมล | บทบาท |
+|---|---|
+| admin@bpm.local | ADMIN — จัดการงบ, อนุมัติการโยกย้าย, ดูทุกสาขา |
+| cs.staff@bpm.local | DEPT_STAFF — สาขาวิทยาการคอมพิวเตอร์ |
+| it.staff@bpm.local | DEPT_STAFF — สาขาเทคโนโลยีสารสนเทศ |
+| viewer@bpm.local | EXECUTIVE_VIEWER — ดูอย่างเดียว ทุกสาขา |
 
-To learn more about Next.js, take a look at the following resources:
+## คำสั่งที่ใช้บ่อย
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run db:studio   # เปิด Prisma Studio ดู/แก้ข้อมูลตรง ๆ
+npm run db:migrate  # สร้าง migration ใหม่หลังแก้ schema.prisma
+npm run build        # build + type check
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## โครงสร้างหลัก
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `prisma/schema.prisma` — data model (Department, FiscalYear, BudgetCategory, BudgetAllocation, Transaction, BudgetTransfer)
+- `src/lib/budget.ts` — คำนวณยอดคงเหลือแบบสดจาก allocation + transfer(approved) + transaction
+- `src/lib/fiscal-year.ts` — ปีงบประมาณราชการไทย (ต.ค.–ก.ย.) และไตรมาส
+- `src/lib/actions/*` — server actions (admin, transactions, transfers) พร้อมตรวจสิทธิ์ตาม role
+- `src/middleware.ts` — บังคับ login + จำกัดสิทธิ์เข้าหน้า `/budgets` เฉพาะ ADMIN
