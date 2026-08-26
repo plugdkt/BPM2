@@ -72,7 +72,7 @@ require __DIR__ . '/../src/partials/layout_start.php';
                 <td>
                   <?php if ($t['status'] === 'PENDING' && $user['role'] === 'ADMIN'): ?>
                     <div style="display:flex; gap:6px;">
-                      <form method="post" action="/actions/decide-transfer.php">
+                      <form method="post" action="<?= htmlspecialchars(bpm_url('actions/decide-transfer.php'), ENT_QUOTES) ?>">
                         <?= bpm_csrf_field() ?>
                         <input type="hidden" name="transfer_id" value="<?= (int) $t['id'] ?>">
                         <input type="hidden" name="decision" value="APPROVED">
@@ -80,7 +80,7 @@ require __DIR__ . '/../src/partials/layout_start.php';
                         <?php if ($selectedDepartmentId !== null): ?><input type="hidden" name="dept" value="<?= (int) $selectedDepartmentId ?>"><?php endif; ?>
                         <button type="submit" class="icon-btn icon-btn-approve" title="อนุมัติ"><?= bpm_icon('check', 13) ?></button>
                       </form>
-                      <form method="post" action="/actions/decide-transfer.php">
+                      <form method="post" action="<?= htmlspecialchars(bpm_url('actions/decide-transfer.php'), ENT_QUOTES) ?>">
                         <?= bpm_csrf_field() ?>
                         <input type="hidden" name="transfer_id" value="<?= (int) $t['id'] ?>">
                         <input type="hidden" name="decision" value="REJECTED">
@@ -108,7 +108,7 @@ require __DIR__ . '/../src/partials/layout_start.php';
       <?php elseif (count($lineItems) < 2): ?>
         <p class="empty-state">สาขานี้ต้องมีอย่างน้อย 2 รายการงบถึงจะโยกย้ายได้</p>
       <?php else: ?>
-        <form method="post" action="/actions/create-transfer.php" id="transfer-form" class="field-group">
+        <form method="post" action="<?= htmlspecialchars(bpm_url('actions/create-transfer.php'), ENT_QUOTES) ?>" id="transfer-form" class="field-group">
           <?= bpm_csrf_field() ?>
           <input type="hidden" name="fy" value="<?= (int) $fiscalYear['id'] ?>">
           <input type="hidden" name="dept" value="<?= (int) $formDepartmentId ?>">
@@ -176,3 +176,4 @@ require __DIR__ . '/../src/partials/layout_start.php';
   </div>
 
 <?php require __DIR__ . '/../src/partials/layout_end.php'; ?>
+

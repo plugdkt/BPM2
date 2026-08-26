@@ -9,12 +9,12 @@ require_once __DIR__ . '/../bootstrap.php';
 $user = bpm_require_role('ADMIN');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: /admin/users.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 if (!bpm_csrf_verify($_POST['csrf_token'] ?? null)) {
     bpm_flash_set('danger', 'คำขอไม่ถูกต้องหรือหมดเวลา');
-    header('Location: /admin/users.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 
@@ -26,13 +26,13 @@ $isActive = isset($_POST['is_active']) ? 1 : 0;
 
 if ($role !== null && !in_array($role, ['ADMIN', 'DEPT_STAFF', 'EXECUTIVE_VIEWER'], true)) {
     bpm_flash_set('danger', 'สิทธิ์ไม่ถูกต้อง');
-    header('Location: /admin/users.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 
 if ($role === 'DEPT_STAFF' && $departmentId === null) {
     bpm_flash_set('danger', 'เจ้าหน้าที่สาขาต้องระบุสาขาด้วย');
-    header('Location: /admin/users.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 
@@ -48,7 +48,7 @@ $stmt->execute([$id]);
 $target = $stmt->fetch();
 if (!$target) {
     bpm_flash_set('danger', 'ไม่พบผู้ใช้นี้');
-    header('Location: /admin/users.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 
@@ -73,10 +73,11 @@ try {
     $db->rollBack();
     error_log('[BPM] save-user-role failed: ' . $e->getMessage());
     bpm_flash_set('danger', 'บันทึกไม่สำเร็จ กรุณาลองใหม่');
-    header('Location: /admin/users.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 
 bpm_flash_set('success', 'บันทึกสิทธิ์ผู้ใช้เรียบร้อยแล้ว');
-header('Location: /admin/users.php');
+header('Location: ' . bpm_url(''));
 exit;
+

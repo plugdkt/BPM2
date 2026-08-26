@@ -12,14 +12,14 @@ require_once __DIR__ . '/../src/bootstrap.php';
 // 1) ตรวจ state ก่อนทำอะไรทั้งสิ้น (ป้องกัน login CSRF — ดู spec.md ข้อ 3.6)
 $stateFromRequest = $_GET['state'] ?? null;
 if (!bpm_sso_validate_and_consume_state($stateFromRequest)) {
-    header('Location: /error.php?type=state_invalid');
+    header('Location: ' . bpm_url('error.php?type=state_invalid'));
     exit;
 }
 
 // 2) ต้องมี token แนบมา
 $token = trim($_GET['token'] ?? '');
 if ($token === '') {
-    header('Location: /error.php?type=token_missing');
+    header('Location: ' . bpm_url('error.php?type=token_missing'));
     exit;
 }
 
@@ -27,12 +27,12 @@ if ($token === '') {
 $result = bpm_sso_verify_token($token);
 
 if ($result['network_error']) {
-    header('Location: /error.php?type=verify_unreachable');
+    header('Location: ' . bpm_url('error.php?type=verify_unreachable'));
     exit;
 }
 
 if (!$result['ok']) {
-    header('Location: /error.php?type=not_authorized&message=' . urlencode((string) $result['message']));
+    header('Location: ' . bpm_url('error.php?type=not_authorized&message=' . urlencode((string) $result['message'])));
     exit;
 }
 
@@ -42,9 +42,9 @@ bpm_start_authenticated_session((int) $user['id']);
 
 // 5) พาไปหน้าที่เหมาะสมตามสิทธิ์ (role ยังไม่ถูกกำหนด -> รอสิทธิ์)
 if ($user['role'] === null) {
-    header('Location: /pending-access.php');
+    header('Location: ' . bpm_url('pending-access.php'));
     exit;
 }
 
-header('Location: /index.php');
+header('Location: ' . bpm_url('index.php'));
 exit;

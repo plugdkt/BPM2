@@ -19,10 +19,10 @@ $fiscalYear ??= null;
 $selectedDepartmentId ??= null;
 
 $navItems = [
-    ['key' => 'dashboard',    'label' => 'ภาพรวม',        'icon' => 'dashboard', 'href' => '/index.php'],
-    ['key' => 'transactions', 'label' => 'บันทึกเบิกจ่าย', 'icon' => 'receipt',   'href' => '/transactions.php'],
-    ['key' => 'transfers',    'label' => 'ขอโยกย้ายงบ',    'icon' => 'swap',      'href' => '/transfers.php', 'badge' => $pendingBadge],
-    ['key' => 'reports',      'label' => 'รายงานสรุป',     'icon' => 'report',    'href' => '/reports.php'],
+    ['key' => 'dashboard',    'label' => 'ภาพรวม',        'icon' => 'dashboard', 'href' => bpm_url('index.php')],
+    ['key' => 'transactions', 'label' => 'บันทึกเบิกจ่าย', 'icon' => 'receipt',   'href' => bpm_url('transactions.php')],
+    ['key' => 'transfers',    'label' => 'ขอโยกย้ายงบ',    'icon' => 'swap',      'href' => bpm_url('transfers.php'), 'badge' => $pendingBadge],
+    ['key' => 'reports',      'label' => 'รายงานสรุป',     'icon' => 'report',    'href' => bpm_url('reports.php')],
 ];
 ?>
 <!doctype html>
@@ -31,7 +31,7 @@ $navItems = [
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= htmlspecialchars($pageTitle, ENT_QUOTES) ?> — BPM</title>
-<link rel="stylesheet" href="/assets/css/app.css">
+<link rel="stylesheet" href="<?= htmlspecialchars(bpm_url('assets/css/app.css'), ENT_QUOTES) ?>">
 </head>
 <body>
 <div class="app-shell">
@@ -58,7 +58,7 @@ $navItems = [
 
       <?php if ($user['role'] === 'ADMIN'): ?>
         <div class="sidebar-divider"></div>
-        <a href="/admin/allocations.php" class="<?= $activeNav === 'admin' ? 'active' : '' ?>">
+        <a href="<?= htmlspecialchars(bpm_url('admin/allocations.php'), ENT_QUOTES) ?>" class="<?= $activeNav === 'admin' ? 'active' : '' ?>">
           <?= bpm_icon('gear', 18) ?>
           ตั้งค่างบ
         </a>

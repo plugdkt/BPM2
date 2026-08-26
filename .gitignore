@@ -2,5 +2,7 @@
 /config/config.php
 *.log
 /logs/
+composer.phar
 .DS_Store
 Thumbs.db
+
