@@ -1,15 +1,39 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  db:
+    image: mariadb:10.11
     restart: unless-stopped
     environment:
-      POSTGRES_USER: bpm
-      POSTGRES_PASSWORD: bpm
-      POSTGRES_DB: bpm
+      MARIADB_ROOT_PASSWORD: root_dev_password
+      MARIADB_DATABASE: bpm
+      MARIADB_USER: bpm_app
+      MARIADB_PASSWORD: bpm_app_dev_password
+      MARIADB_CHARACTER_SET_SERVER: utf8mb4
+      MARIADB_COLLATION_SERVER: utf8mb4_unicode_ci
     ports:
-      - "5432:5432"
+      - "3306:3306" # เผื่ออยากต่อด้วย DB client จากเครื่อง host ดูข้อมูลตรงๆ
     volumes:
-      - bpm_postgres_data:/var/lib/postgresql/data
+      - bpm_db_data:/var/lib/mysql
+      # รันอัตโนมัติแค่ครั้งแรกตอนสร้าง volume ใหม่เท่านั้น (พฤติกรรมมาตรฐานของ mariadb image)
+      # ถ้าแก้ schema.sql แล้วอยากให้ import ใหม่ ต้อง down -v ก่อน (ล้าง volume) ดูคำแนะนำท้ายไฟล์
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/php.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
-  bpm_postgres_data:
+  bpm_db_data:

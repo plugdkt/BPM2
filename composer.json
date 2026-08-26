@@ -1,0 +1,16 @@
+{
+    "name": "medsci-up/bpm",
+    "description": "ระบบบริหารจัดการงบประมาณสาขาวิชา คณะวิทยาศาสตร์การแพทย์ มหาวิทยาลัยพะเยา",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.2",
+        "ext-pdo": "*",
+        "ext-curl": "*",
+        "phpoffice/phpspreadsheet": "^2.0",
+        "dompdf/dompdf": "^3.0"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}
