@@ -31,6 +31,12 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Security headers พื้นฐาน — กัน clickjacking/MIME-sniffing (ไม่มี CSP เพราะหน้า transactions.php มี inline <script>
+// อยู่หลายจุด ต้อง refactor เป็น external file ก่อนถึงจะเปิด CSP ได้แบบไม่พังฟีเจอร์)
+header('X-Frame-Options: SAMEORIGIN');
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+
 // Global error/exception handler (ดู spec.md ข้อ 9 — แยกจาก public/error.php ที่ครอบเฉพาะ SSO flow)
 set_error_handler(static function (int $severity, string $message, string $file, int $line): bool {
     if (!(error_reporting() & $severity)) {

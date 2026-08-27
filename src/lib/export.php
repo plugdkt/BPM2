@@ -16,6 +16,9 @@ use Dompdf\Options;
  */
 function bpm_send_excel(array $headers, array $rows, string $filename): void
 {
+    // sanitize เผื่ออนาคตมี caller อื่นที่ path ไม่ได้ผูกกับ year_be (int 2500-2700) เหมือน public/reports.php วันนี้
+    $filename = preg_replace('/[^A-Za-z0-9_-]/', '', $filename) ?: 'export';
+
     $spreadsheet = new Spreadsheet();
     $sheet = $spreadsheet->getActiveSheet();
 
@@ -45,6 +48,8 @@ function bpm_send_excel(array $headers, array $rows, string $filename): void
  */
 function bpm_send_pdf(string $bodyHtml, string $filename): void
 {
+    $filename = preg_replace('/[^A-Za-z0-9_-]/', '', $filename) ?: 'export';
+
     $options = new Options();
     // isRemoteEnabled=true + chroot จำกัดไว้แค่ src/fonts — จำเป็นสำหรับให้ registerFont() โหลดไฟล์ font ท้องถิ่นได้
     // (ค้นพบตอน dev: chroot default ของ Dompdf บล็อกการอ่านไฟล์นอก path ที่อนุญาต แม้จะเป็นไฟล์ในเครื่องเราเองก็ตาม
