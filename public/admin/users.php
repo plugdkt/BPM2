@@ -15,6 +15,39 @@ require __DIR__ . '/../../src/partials/layout_start.php';
 ?>
 
   <div class="card">
+    <h2>เพิ่มผู้ใช้ล่วงหน้า</h2>
+    <p class="text-muted small" style="margin-top:-8px; margin-bottom:16px;">
+      กำหนดสิทธิ์ล่วงหน้าโดยที่คนนั้นยังไม่เคย login เข้าระบบเลยก็ได้ — ต้องรู้ username บัญชี UP Account ของเขาให้ถูกต้อง (เช่น <code>wittaya.su</code>)
+      พอเขา login ครั้งแรกจริงจะได้สิทธิ์ที่ตั้งไว้ทันที ไม่ต้องรอ ADMIN มากำหนดซ้ำ — ถ้าพิมพ์ username ผิด บัญชีนั้นจะไม่ได้สิทธิ์ (แก้ไขทีหลังได้จากตารางด้านล่าง)
+    </p>
+    <form method="post" action="<?= htmlspecialchars(bpm_url('actions/create-pending-user.php'), ENT_QUOTES) ?>" id="pending-user-form" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+      <?= bpm_csrf_field() ?>
+      <div>
+        <label class="field-label" for="new_sso_username">Username บัญชี UP Account</label>
+        <input type="text" name="sso_username" id="new_sso_username" class="field" placeholder="เช่น wittaya.su" required>
+      </div>
+      <div>
+        <label class="field-label" for="new_role">สิทธิ์</label>
+        <select name="role" id="new_role" class="field" onchange="document.getElementById('new-dept-wrap').style.display = this.value === 'DEPT_STAFF' ? '' : 'none';">
+          <option value="">— ยังไม่กำหนด —</option>
+          <option value="ADMIN">ผู้ดูแลระบบ (ADMIN)</option>
+          <option value="DEPT_STAFF">เจ้าหน้าที่สาขา (DEPT_STAFF)</option>
+          <option value="EXECUTIVE_VIEWER">ผู้บริหาร (EXECUTIVE_VIEWER)</option>
+        </select>
+      </div>
+      <div id="new-dept-wrap" style="display:none;">
+        <label class="field-label" for="new_department_id">สาขา</label>
+        <select name="department_id" id="new_department_id" class="field">
+          <?php foreach ($departments as $d): ?>
+            <option value="<?= (int) $d['id'] ?>"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary"><?= bpm_icon('plus', 14) ?> เพิ่มผู้ใช้</button>
+    </form>
+  </div>
+
+  <div class="card">
     <h2>บัญชีที่ล็อกอินผ่าน SSO ทั้งหมด</h2>
     <p class="text-muted small" style="margin-top:-8px; margin-bottom:16px;">
       ไม่มีฟีเจอร์ตั้ง/reset รหัสผ่านที่นี่ เพราะรหัสผ่านอยู่ที่บัญชี UP Account เท่านั้น (ดู spec.md ข้อ 7)
@@ -44,7 +77,8 @@ require __DIR__ . '/../../src/partials/layout_start.php';
           <tr>
             <td>
               <?= htmlspecialchars($r['name'], ENT_QUOTES) ?>
-              <?php if ($r['role'] === null): ?><br><span class="pill pill-warning">รอกำหนดสิทธิ์</span><?php endif; ?>
+              <?php if ($r['last_login_at'] === null): ?><br><span class="pill pill-neutral">ยังไม่เคย login</span>
+              <?php elseif ($r['role'] === null): ?><br><span class="pill pill-warning">รอกำหนดสิทธิ์</span><?php endif; ?>
             </td>
             <td class="text-muted"><?= htmlspecialchars($r['sso_username'], ENT_QUOTES) ?></td>
             <td class="text-muted small"><?= htmlspecialchars(trim(($r['pos_name'] ?? '') . ' · ' . ($r['div_name'] ?? '')), ENT_QUOTES) ?></td>
