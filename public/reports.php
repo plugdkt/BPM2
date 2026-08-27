@@ -136,7 +136,6 @@ $exportQs = http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'dept' =
     $tabQs = static fn (?int $deptId) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'view' => 'table', 'dept' => $deptId])); ?>
     <div class="card">
       <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto;">
-        <a href="?<?= $tabQs(null) ?>" class="filter-chip" style="<?= $selectedDepartmentId === null ? 'background:var(--accent); color:#fff;' : '' ?>">ทั้งหมด</a>
         <?php foreach (bpm_all_departments() as $d): ?>
           <a href="?<?= $tabQs((int) $d['id']) ?>" class="filter-chip" style="<?= $selectedDepartmentId === (int) $d['id'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></a>
         <?php endforeach; ?>
