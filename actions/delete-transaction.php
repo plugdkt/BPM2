@@ -1,5 +1,2 @@
 <?php
-
-declare(strict_types=1);
-
-require __DIR__ . '/../../src/actions/delete-transaction.php';
+require __DIR__ . '/../public/actions/delete-transaction.php';

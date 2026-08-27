@@ -1,5 +1,2 @@
 <?php
-
-declare(strict_types=1);
-
-require __DIR__ . '/../../src/actions/save-user-role.php';
+require __DIR__ . '/../public/actions/save-user-role.php';
