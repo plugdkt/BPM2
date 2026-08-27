@@ -73,7 +73,18 @@ require __DIR__ . '/../src/partials/layout_start.php';
 $rowQs = static fn (int $id) => http_build_query(array_filter([
     'fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'page' => $page, 'q' => $search ?: null, 'edit' => $id,
 ]));
+$tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'dept' => $deptId]));
 ?>
+
+  <?php if ($user['role'] !== 'DEPT_STAFF'): ?>
+    <div class="card">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto;">
+        <?php foreach (bpm_all_departments() as $d): ?>
+          <a href="?<?= $tabQs((int) $d['id']) ?>" class="filter-chip" style="<?= $selectedDepartmentId === (int) $d['id'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></a>
+        <?php endforeach; ?>
+      </div>
+    </div>
+  <?php endif; ?>
 
   <div class="two-col">
     <div class="card main-panel">
@@ -91,6 +102,14 @@ $rowQs = static fn (int $id) => http_build_query(array_filter([
       <?php if (empty($listing['rows'])): ?>
         <p class="empty-state">ยังไม่มีรายการ<?= $search !== '' ? 'ที่ตรงกับคำค้นหา' : '' ?></p>
       <?php else: ?>
+        <?php if ($user['role'] === 'ADMIN'): foreach ($listing['rows'] as $t): ?>
+          <form id="del-txn-<?= (int) $t['id'] ?>" method="post" action="<?= htmlspecialchars(bpm_url('actions/delete-transaction.php'), ENT_QUOTES) ?>">
+            <?= bpm_csrf_field() ?>
+            <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
+            <input type="hidden" name="fy" value="<?= htmlspecialchars((string) ($_GET['fy'] ?? ''), ENT_QUOTES) ?>">
+            <input type="hidden" name="dept" value="<?= htmlspecialchars((string) ($_GET['dept'] ?? ''), ENT_QUOTES) ?>">
+          </form>
+        <?php endforeach; endif; ?>
         <table class="data-table">
           <thead>
             <tr>
@@ -100,7 +119,7 @@ $rowQs = static fn (int $id) => http_build_query(array_filter([
               <th>เลขที่อ้างอิง</th>
               <th class="center">ประเภท</th>
               <th class="num">จำนวนเงิน</th>
-              <th style="width:50px;"></th>
+              <th style="width:80px;"></th>
             </tr>
           </thead>
           <tbody>
@@ -115,9 +134,16 @@ $rowQs = static fn (int $id) => http_build_query(array_filter([
                 <td class="num" style="<?= $t['type'] === 'INCOME' ? 'color: var(--status-success-text);' : '' ?>">
                   <?= $t['type'] === 'EXPENSE' ? '-' : '+' ?><?= htmlspecialchars(bpm_money((float) $t['amount']), ENT_QUOTES) ?>
                 </td>
-                <td class="center">
+                <td class="center" style="display:flex; gap:6px; justify-content:center;">
                   <?php if ($canEdit): ?>
                     <a href="?<?= $rowQs((int) $t['id']) ?>" class="icon-btn icon-btn-approve" title="แก้ไขรายการ" style="display:inline-flex;"><?= bpm_icon('edit', 13) ?></a>
+                  <?php endif; ?>
+                  <?php if ($user['role'] === 'ADMIN'): ?>
+                    <button type="submit" form="del-txn-<?= (int) $t['id'] ?>" class="icon-btn icon-btn-reject" title="ลบรายการถาวร"
+                            data-confirm-desc="<?= htmlspecialchars($t['line_item_name'] . ' — ' . $t['description'] . ' (' . bpm_money((float) $t['amount']) . ')', ENT_QUOTES) ?>"
+                            onclick="return bpmConfirmDeleteTxn(this)">
+                      <?= bpm_icon('trash', 13) ?>
+                    </button>
                   <?php endif; ?>
                 </td>
               </tr>
@@ -324,5 +350,11 @@ $rowQs = static fn (int $id) => http_build_query(array_filter([
       <?php endif; ?>
     </div>
   </div>
+
+  <script>
+    function bpmConfirmDeleteTxn(btn) {
+      return confirm('ลบรายการนี้ถาวร?\n\n' + btn.dataset.confirmDesc + '\n\nการลบนี้ย้อนกลับไม่ได้ (ต่างจากที่อื่นในระบบที่แค่ปิดใช้งาน) ใช้เฉพาะกรณีข้อมูลผิดพลาดจริงเท่านั้น');
+    }
+  </script>
 
 <?php require __DIR__ . '/../src/partials/layout_end.php'; ?>

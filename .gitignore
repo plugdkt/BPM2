@@ -6,3 +6,10 @@ composer.phar
 .DS_Store
 Thumbs.db
 
+# ไฟล์ export ข้อมูลบุคลากรจริง (PII) — ห้าม commit เด็ดขาด
+users_export.csv
+*.csv
+
+# ไฟล์ lock ชั่วคราวของ Excel ตอนเปิดไฟล์ค้างไว้
+~$*.xlsx
+
