@@ -6,6 +6,16 @@ require_once __DIR__ . '/../src/bootstrap.php';
 
 $user = bpm_require_role('ADMIN', 'DEPT_STAFF');
 
+// เข้าหน้านี้ครั้งแรกโดยไม่ระบุ ?dept= เลย (ไม่ใช่เลือก "ทั้งหมด" ตั้งใจ) — เด้งไปสาขาแรกให้อัตโนมัติ
+// เพื่อให้เห็นสรุปหมวดเงิน/ฟอร์มบันทึกรายการทันทีโดยไม่ต้องคลิกเลือกสาขาเอง (dept="" ว่างๆ ยังคงหมายถึง "ทั้งหมด" ตามเดิม)
+if ($user['role'] !== 'DEPT_STAFF' && !isset($_GET['dept'])) {
+    $firstDeptId = bpm_db()->query('SELECT id FROM departments WHERE is_active = 1 ORDER BY name LIMIT 1')->fetchColumn();
+    if ($firstDeptId) {
+        header('Location: ?' . http_build_query(array_merge($_GET, ['dept' => $firstDeptId])));
+        exit;
+    }
+}
+
 $fiscalYear = bpm_resolve_fiscal_year();
 $selectedDepartmentId = bpm_resolve_department_filter($user);
 $page = max(1, (int) ($_GET['page'] ?? 1));
@@ -122,9 +132,13 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
 ], static fn ($v) => $v !== null && $v !== ''));
 ?>
 
-  <?php if ($user['role'] !== 'DEPT_STAFF'): ?>
+  <?php if ($user['role'] !== 'DEPT_STAFF'):
+    // ต้องส่ง dept= (ว่างๆ) แบบตั้งใจ ไม่ใช่ตัด param ทิ้งไปเฉยๆ ไม่งั้นเข้าเงื่อนไข "ไม่ได้ระบุ dept" แล้วโดนเด้งกลับไปสาขาแรกอีกที
+    $allDeptParams = array_filter(['fy' => $_GET['fy'] ?? null, 'group' => $_GET['group'] ?? null], static fn ($v) => $v !== null && $v !== '');
+    $allDeptParams['dept'] = ''; ?>
     <div class="card">
       <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto;">
+        <a href="?<?= http_build_query($allDeptParams) ?>" class="filter-chip" style="<?= $selectedDepartmentId === null ? 'background:var(--accent); color:#fff;' : '' ?>">ทั้งหมด</a>
         <?php foreach (bpm_all_departments() as $d): ?>
           <a href="?<?= $tabQs((int) $d['id']) ?>" class="filter-chip" style="<?= $selectedDepartmentId === (int) $d['id'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></a>
         <?php endforeach; ?>
