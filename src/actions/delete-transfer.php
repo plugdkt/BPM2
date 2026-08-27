@@ -18,9 +18,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $redirectBack = bpm_url('transfers.php?') . http_build_query(array_filter([
-    'fy'   => $_POST['fy'] ?? null,
-    'dept' => $_POST['dept'] ?? null,
-]));
+    'fy'    => $_POST['fy'] ?? null,
+    'dept'  => $_POST['dept'] ?? null,
+    'group' => $_POST['group'] ?? null,
+], static fn ($v) => $v !== null && $v !== ''));
 
 if (!bpm_csrf_verify($_POST['csrf_token'] ?? null)) {
     bpm_flash_set('danger', 'คำขอไม่ถูกต้องหรือหมดเวลา กรุณาลองใหม่อีกครั้ง');

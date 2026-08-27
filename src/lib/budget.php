@@ -220,7 +220,11 @@ function bpm_recent_transactions(?int $departmentId, int $fiscalYearId, int $lim
  * รายการเบิกจ่าย/รายรับแบบมี pagination (ดู spec.md ข้อ 9 — ห้าม query ทั้งตารางมาแสดงในหน้าเดียว)
  * @return array{rows: array, total: int, page: int, per_page: int, total_pages: int}
  */
-function bpm_list_transactions(?int $departmentId, int $fiscalYearId, int $page = 1, int $perPage = 50, string $search = ''): array
+/**
+ * $groupId: null = ทุกกลุ่มหมวด (ไม่กรอง), 0 = เฉพาะรายการที่ยังไม่ระบุกลุ่มหมวด (group_id IS NULL),
+ * ค่าบวก = เฉพาะกลุ่มหมวดนั้น (ดู spec.md ข้อ 6.3 — group_id เป็น optional tag)
+ */
+function bpm_list_transactions(?int $departmentId, int $fiscalYearId, int $page = 1, int $perPage = 50, string $search = '', ?int $groupId = null): array
 {
     $db = bpm_db();
     $page = max(1, $page);
@@ -233,6 +237,16 @@ function bpm_list_transactions(?int $departmentId, int $fiscalYearId, int $page 
         $params[] = $departmentId;
     }
 
+    $groupFilter = '';
+    if ($groupId !== null) {
+        if ($groupId === 0) {
+            $groupFilter = ' AND li.group_id IS NULL';
+        } else {
+            $groupFilter = ' AND li.group_id = ?';
+            $params[] = $groupId;
+        }
+    }
+
     $searchFilter = '';
     if ($search !== '') {
         $searchFilter = ' AND (t.description LIKE ? OR li.name LIKE ? OR t.reference_no LIKE ?)';
@@ -242,7 +256,7 @@ function bpm_list_transactions(?int $departmentId, int $fiscalYearId, int $page 
 
     $countStmt = $db->prepare(
         "SELECT COUNT(*) FROM transactions t JOIN budget_line_items li ON li.id = t.line_item_id
-         WHERE li.fiscal_year_id = ?{$deptFilter}{$searchFilter}"
+         WHERE li.fiscal_year_id = ?{$deptFilter}{$groupFilter}{$searchFilter}"
     );
     $countStmt->execute($params);
     $total = (int) $countStmt->fetchColumn();
@@ -253,7 +267,7 @@ function bpm_list_transactions(?int $departmentId, int $fiscalYearId, int $page 
          FROM transactions t
          JOIN budget_line_items li ON li.id = t.line_item_id
          JOIN departments d ON d.id = li.department_id
-         WHERE li.fiscal_year_id = ?{$deptFilter}{$searchFilter}
+         WHERE li.fiscal_year_id = ?{$deptFilter}{$groupFilter}{$searchFilter}
          ORDER BY t.txn_date DESC, t.id DESC
          LIMIT {$perPage} OFFSET {$offset}"
     );

@@ -8,6 +8,8 @@ $user = bpm_require_role('ADMIN', 'DEPT_STAFF');
 
 $fiscalYear = bpm_resolve_fiscal_year();
 $selectedDepartmentId = bpm_resolve_department_filter($user);
+$selectedGroupId = isset($_GET['group']) && $_GET['group'] !== '' ? (int) $_GET['group'] : null;
+$groups = bpm_db()->query('SELECT * FROM budget_groups WHERE is_active = 1 ORDER BY id')->fetchAll();
 
 $pageTitle = 'คำขอโยกย้ายงบประมาณ';
 $activeNav = 'transfers';
@@ -26,8 +28,19 @@ $formDepartmentId = $user['role'] === 'DEPT_STAFF' ? (int) $user['department_id'
 $lineItems = $formDepartmentId !== null ? bpm_line_items_for_department($formDepartmentId, (int) $fiscalYear['id']) : [];
 
 $balanceMap = [];
+$lineItemDetails = [];
 foreach ($lineItems as $li) {
-    $balanceMap[(int) $li['id']] = bpm_line_item_balance((int) $li['id'])['balance'];
+    $detail = bpm_line_item_balance((int) $li['id']);
+    $balanceMap[(int) $li['id']] = $detail['balance'];
+    $lineItemDetails[(int) $li['id']] = $detail;
+}
+
+// รายการงบที่อยู่ในหมวดเงินที่กำลังเลือกดู (ใช้ $lineItems/$lineItemDetails ที่คำนวณไว้แล้ว ไม่ query ซ้ำ)
+$groupLineItems = [];
+if ($selectedGroupId !== null) {
+    $groupLineItems = array_values(array_filter($lineItems, static function ($li) use ($selectedGroupId) {
+        return $selectedGroupId === 0 ? $li['group_id'] === null : (int) $li['group_id'] === $selectedGroupId;
+    }));
 }
 
 $statusPill = [
@@ -38,7 +51,13 @@ $statusPill = [
 
 require __DIR__ . '/../src/partials/layout_start.php';
 
-$tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'dept' => $deptId]));
+$tabQs = static fn (int $deptId) => http_build_query(array_filter([
+    'fy' => $_GET['fy'] ?? null, 'dept' => $deptId, 'group' => $_GET['group'] ?? null,
+], static fn ($v) => $v !== null && $v !== ''));
+// $groupId: null = tab "ทั้งหมด" (เคลียร์ filter), 0 = tab "ไม่ระบุ", บวก = tab กลุ่มนั้น
+$groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
+    'fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'group' => $groupId,
+], static fn ($v) => $v !== null && $v !== ''));
 ?>
 
   <?php if ($user['role'] !== 'DEPT_STAFF'): ?>
@@ -51,13 +70,67 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
     </div>
   <?php endif; ?>
 
+  <div class="card">
+    <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto; align-items:center;">
+      <span class="text-muted small" style="margin-right:2px;">หมวดเงิน:</span>
+      <a href="?<?= $groupTabQs(null) ?>" class="filter-chip" style="<?= $selectedGroupId === null ? 'background:var(--accent); color:#fff;' : '' ?>">ทั้งหมด</a>
+      <?php foreach ($groups as $g): ?>
+        <a href="?<?= $groupTabQs((int) $g['id']) ?>" class="filter-chip" style="<?= $selectedGroupId === (int) $g['id'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($g['name'], ENT_QUOTES) ?></a>
+      <?php endforeach; ?>
+      <a href="?<?= $groupTabQs(0) ?>" class="filter-chip" style="<?= $selectedGroupId === 0 ? 'background:var(--accent); color:#fff;' : '' ?>">ไม่ระบุกลุ่ม</a>
+    </div>
+  </div>
+
+  <?php if ($selectedGroupId !== null && $formDepartmentId !== null): ?>
+    <div class="card">
+      <?php $groupNameMap = array_column($groups, 'name', 'id'); ?>
+      <h2>รายการงบในหมวด "<?= htmlspecialchars($selectedGroupId === 0 ? 'ไม่ระบุกลุ่ม' : ($groupNameMap[$selectedGroupId] ?? ''), ENT_QUOTES) ?>"</h2>
+      <?php if (empty($groupLineItems)): ?>
+        <p class="empty-state">ไม่มีรายการงบในหมวดนี้สำหรับสาขาที่เลือก</p>
+      <?php else: ?>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>รายการ</th>
+              <th class="num">จัดสรร</th>
+              <th class="num">ใช้ไปแล้ว</th>
+              <th class="num">คงเหลือ</th>
+              <th style="width:100px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($groupLineItems as $li):
+              $d = $lineItemDetails[(int) $li['id']]; ?>
+              <?php $spent = $d['expense'] - $d['income']; ?>
+              <tr>
+                <td><?= htmlspecialchars($li['name'], ENT_QUOTES) ?></td>
+                <td class="num"><?= htmlspecialchars(bpm_money($d['total_budget']), ENT_QUOTES) ?></td>
+                <td class="num"><?= htmlspecialchars(bpm_money($spent), ENT_QUOTES) ?></td>
+                <td class="num" style="<?= $d['balance'] < 0 ? 'color: var(--status-danger-text);' : 'color: var(--status-success-text);' ?>"><?= htmlspecialchars(bpm_money($d['balance']), ENT_QUOTES) ?></td>
+                <td>
+                  <?php if (count($lineItems) >= 2): ?>
+                    <button type="button" class="btn btn-secondary" style="padding:5px 10px; font-size:12.5px;" onclick="bpmOpenTransferModal(<?= (int) $li['id'] ?>)">ยื่นคำขอ</button>
+                  <?php endif; ?>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
+
   <?php if ($pendingCount > 0): ?>
     <p><span class="pill pill-warning">รออนุมัติ <?= $pendingCount ?> รายการ</span></p>
   <?php endif; ?>
 
-  <div class="two-col">
-    <div class="card main-panel">
-      <h2>รายการคำขอทั้งหมด</h2>
+  <div class="card main-panel">
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <h2 style="margin:0;">รายการคำขอทั้งหมด</h2>
+        <?php if ($formDepartmentId !== null && count($lineItems) >= 2): ?>
+          <button type="button" class="btn btn-primary" style="padding:6px 12px; font-size:13px;" onclick="bpmOpenTransferModal(0)"><?= bpm_icon('plus', 13) ?> ยื่นคำขอ</button>
+        <?php endif; ?>
+      </div>
 
       <?php if (empty($transfers)): ?>
         <p class="empty-state">ยังไม่มีคำขอโยกย้ายงบในปีงบนี้</p>
@@ -68,6 +141,7 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
             <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
             <input type="hidden" name="fy" value="<?= (int) $fiscalYear['id'] ?>">
             <?php if ($selectedDepartmentId !== null): ?><input type="hidden" name="dept" value="<?= (int) $selectedDepartmentId ?>"><?php endif; ?>
+            <?php if ($selectedGroupId !== null): ?><input type="hidden" name="group" value="<?= (int) $selectedGroupId ?>"><?php endif; ?>
           </form>
         <?php endforeach; endif; ?>
         <table class="data-table">
@@ -130,7 +204,8 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
       <?php endif; ?>
     </div>
 
-    <div class="card side-panel">
+  <dialog id="transfer-modal" class="modal">
+    <div class="modal-inner">
       <h2>ยื่นคำขอโยกย้ายงบใหม่</h2>
 
       <?php if ($formDepartmentId === null): ?>
@@ -182,7 +257,7 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
 
           <div class="btn-row">
             <button type="submit" class="btn btn-primary">ยื่นคำขอ</button>
-            <a href="/transfers.php" class="btn btn-secondary">ยกเลิก</a>
+            <button type="button" class="btn btn-secondary" onclick="document.getElementById('transfer-modal').close()">ยกเลิก</button>
           </div>
         </form>
 
@@ -203,11 +278,27 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
         </script>
       <?php endif; ?>
     </div>
-  </div>
+  </dialog>
 
   <script>
     function bpmConfirmDeleteTransfer(btn) {
       return confirm('ลบคำขอโยกย้ายงบนี้ถาวร?\n\n' + btn.dataset.confirmDesc + '\n\nการลบนี้ย้อนกลับไม่ได้ ถ้าเคยอนุมัติแล้ว ยอดคงเหลือของหมวดที่เกี่ยวข้องจะเปลี่ยนทันที ใช้เฉพาะกรณีข้อมูลผิดพลาดจริงเท่านั้น');
+    }
+
+    function bpmOpenTransferModal(lineItemId) {
+      const fromSelect = document.getElementById('from_line_item_id');
+      if (lineItemId > 0 && fromSelect) {
+        fromSelect.value = lineItemId;
+        if (typeof bpmUpdateTransferPreview === 'function') bpmUpdateTransferPreview();
+      }
+      document.getElementById('transfer-modal').showModal();
+    }
+
+    const bpmTransferModal = document.getElementById('transfer-modal');
+    if (bpmTransferModal) {
+      bpmTransferModal.addEventListener('click', function (e) {
+        if (e.target === this) this.close();
+      });
     }
   </script>
 

@@ -202,6 +202,15 @@ table.data-table tbody tr:nth-child(even) { background: #FAFBFC; }
 .two-col .main-panel { flex: 2; min-width: 0; }
 .two-col .side-panel { flex: 1; min-width: 320px; position: sticky; top: 26px; }
 
+dialog.modal {
+  border: none; border-radius: 12px; padding: 0; width: 92vw; max-width: 520px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+}
+dialog.modal::backdrop { background: rgba(15, 23, 42, 0.5); }
+dialog.modal .modal-inner { padding: 24px; max-height: 85vh; overflow-y: auto; }
+dialog.modal[open] { animation: bpm-modal-in 0.15s ease-out; }
+@keyframes bpm-modal-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
 .field-group { display: flex; flex-direction: column; gap: 14px; }
 label.field-label { display: block; font-size: 12.5px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
 .field, select.field, input.field, textarea.field {

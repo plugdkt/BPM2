@@ -10,6 +10,9 @@ $fiscalYear = bpm_resolve_fiscal_year();
 $selectedDepartmentId = bpm_resolve_department_filter($user);
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $search = trim((string) ($_GET['q'] ?? ''));
+// group=<id> เจาะจงกลุ่มหมวด, group=0 = เฉพาะที่ยังไม่ระบุกลุ่ม, ไม่ส่ง group เลย = ทุกกลุ่ม (ดู bpm_list_transactions())
+$selectedGroupId = isset($_GET['group']) && $_GET['group'] !== '' ? (int) $_GET['group'] : null;
+$groups = bpm_db()->query('SELECT * FROM budget_groups WHERE is_active = 1 ORDER BY id')->fetchAll();
 
 $pageTitle = 'บันทึกเบิกจ่าย / รายรับ';
 $activeNav = 'transactions';
@@ -21,16 +24,29 @@ if ($fiscalYear === null) {
     exit;
 }
 
-$listing = bpm_list_transactions($selectedDepartmentId, (int) $fiscalYear['id'], $page, 50, $search);
+$listing = bpm_list_transactions($selectedDepartmentId, (int) $fiscalYear['id'], $page, 50, $search, $selectedGroupId);
 
 // สาขาเป้าหมายสำหรับฟอร์มบันทึกใหม่: DEPT_STAFF = สาขาตัวเองเสมอ, ADMIN = ต้องเลือกสาขาเจาะจงก่อน (เลือก "ทั้งหมด" บันทึกไม่ได้)
 $formDepartmentId = $user['role'] === 'DEPT_STAFF' ? (int) $user['department_id'] : $selectedDepartmentId;
 $lineItems = $formDepartmentId !== null ? bpm_line_items_for_department($formDepartmentId, (int) $fiscalYear['id']) : [];
 
 $balanceMap = [];
+$lineItemDetails = [];
 foreach ($lineItems as $li) {
-    $balanceMap[(int) $li['id']] = bpm_line_item_balance((int) $li['id'])['balance'];
+    $detail = bpm_line_item_balance((int) $li['id']);
+    $balanceMap[(int) $li['id']] = $detail['balance'];
+    $lineItemDetails[(int) $li['id']] = $detail;
 }
+
+// รายการงบที่อยู่ในหมวดเงินที่กำลังเลือกดู (ใช้ $lineItems/$lineItemDetails ที่คำนวณไว้แล้ว ไม่ query ซ้ำ)
+$groupLineItems = [];
+if ($selectedGroupId !== null) {
+    $groupLineItems = array_values(array_filter($lineItems, static function ($li) use ($selectedGroupId) {
+        return $selectedGroupId === 0 ? $li['group_id'] === null : (int) $li['group_id'] === $selectedGroupId;
+    }));
+}
+
+$preselectLineItemId = (int) ($_GET['li'] ?? 0);
 
 // ค่าเริ่มต้นของช่องวันที่ต้องอยู่ในช่วงปีงบเสมอ (ไม่ใช่ "วันนี้" เฉยๆ) เพราะวันนี้อาจอยู่นอกช่วงปีงบที่กำลังดูอยู่
 // เช่น เปิดดูปีงบที่ยังไม่เริ่ม (start_date อยู่ในอนาคต) ค่า default เป็นวันนี้จะ invalid ทันทีเพราะน้อยกว่า min
@@ -71,9 +87,15 @@ if ($editId > 0) {
 require __DIR__ . '/../src/partials/layout_start.php';
 
 $rowQs = static fn (int $id) => http_build_query(array_filter([
-    'fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'page' => $page, 'q' => $search ?: null, 'edit' => $id,
-]));
-$tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'dept' => $deptId]));
+    'fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'group' => $_GET['group'] ?? null, 'page' => $page, 'q' => $search ?: null, 'edit' => $id,
+], static fn ($v) => $v !== null && $v !== ''));
+$tabQs = static fn (int $deptId) => http_build_query(array_filter([
+    'fy' => $_GET['fy'] ?? null, 'dept' => $deptId, 'group' => $_GET['group'] ?? null,
+], static fn ($v) => $v !== null && $v !== ''));
+// $groupId: null = tab "ทั้งหมด" (เคลียร์ filter), 0 = tab "ไม่ระบุ", บวก = tab กลุ่มนั้น
+$groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
+    'fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'group' => $groupId,
+], static fn ($v) => $v !== null && $v !== ''));
 ?>
 
   <?php if ($user['role'] !== 'DEPT_STAFF'): ?>
@@ -86,12 +108,62 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
     </div>
   <?php endif; ?>
 
-  <div class="two-col">
-    <div class="card main-panel">
+  <div class="card">
+    <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto; align-items:center;">
+      <span class="text-muted small" style="margin-right:2px;">หมวดเงิน:</span>
+      <a href="?<?= $groupTabQs(null) ?>" class="filter-chip" style="<?= $selectedGroupId === null ? 'background:var(--accent); color:#fff;' : '' ?>">ทั้งหมด</a>
+      <?php foreach ($groups as $g): ?>
+        <a href="?<?= $groupTabQs((int) $g['id']) ?>" class="filter-chip" style="<?= $selectedGroupId === (int) $g['id'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($g['name'], ENT_QUOTES) ?></a>
+      <?php endforeach; ?>
+      <a href="?<?= $groupTabQs(0) ?>" class="filter-chip" style="<?= $selectedGroupId === 0 ? 'background:var(--accent); color:#fff;' : '' ?>">ไม่ระบุกลุ่ม</a>
+    </div>
+  </div>
+
+  <?php if ($selectedGroupId !== null && $formDepartmentId !== null): ?>
+    <div class="card">
+      <?php $groupNameMap = array_column($groups, 'name', 'id'); ?>
+      <h2>รายการงบในหมวด "<?= htmlspecialchars($selectedGroupId === 0 ? 'ไม่ระบุกลุ่ม' : ($groupNameMap[$selectedGroupId] ?? ''), ENT_QUOTES) ?>"</h2>
+      <?php if (empty($groupLineItems)): ?>
+        <p class="empty-state">ไม่มีรายการงบในหมวดนี้สำหรับสาขาที่เลือก</p>
+      <?php else: ?>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>รายการ</th>
+              <th class="num">จัดสรร</th>
+              <th class="num">ใช้ไปแล้ว</th>
+              <th class="num">คงเหลือ</th>
+              <th style="width:100px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($groupLineItems as $li):
+              $d = $lineItemDetails[(int) $li['id']]; ?>
+              <?php $spent = $d['expense'] - $d['income']; ?>
+              <tr>
+                <td><?= htmlspecialchars($li['name'], ENT_QUOTES) ?></td>
+                <td class="num"><?= htmlspecialchars(bpm_money($d['total_budget']), ENT_QUOTES) ?></td>
+                <td class="num"><?= htmlspecialchars(bpm_money($spent), ENT_QUOTES) ?></td>
+                <td class="num" style="<?= $d['balance'] < 0 ? 'color: var(--status-danger-text);' : 'color: var(--status-success-text);' ?>"><?= htmlspecialchars(bpm_money($d['balance']), ENT_QUOTES) ?></td>
+                <td><button type="button" class="btn btn-secondary" style="padding:5px 10px; font-size:12.5px;" onclick="bpmOpenTxnModal(<?= (int) $li['id'] ?>)">เพิ่มรายการ</button></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
+
+  <div class="card main-panel">
       <div class="table-toolbar">
-        <h2 style="margin:0;">รายการทั้งหมด — ปีงบ พ.ศ. <?= (int) $fiscalYear['year_be'] ?></h2>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <h2 style="margin:0;">รายการทั้งหมด — ปีงบ พ.ศ. <?= (int) $fiscalYear['year_be'] ?></h2>
+          <?php if ($formDepartmentId !== null && !empty($lineItems)): ?>
+            <button type="button" class="btn btn-primary" style="padding:6px 12px; font-size:13px;" onclick="bpmOpenTxnModal(0)"><?= bpm_icon('plus', 13) ?> เพิ่มรายการ</button>
+          <?php endif; ?>
+        </div>
         <form method="get" class="search-box">
-          <?php foreach (['fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null] as $k => $v): if ($v !== null): ?>
+          <?php foreach (['fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'group' => $_GET['group'] ?? null] as $k => $v): if ($v !== null && $v !== ''): ?>
             <input type="hidden" name="<?= $k ?>" value="<?= htmlspecialchars((string) $v, ENT_QUOTES) ?>">
           <?php endif; endforeach; ?>
           <?= bpm_icon('search', 14) ?>
@@ -108,6 +180,7 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
             <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
             <input type="hidden" name="fy" value="<?= htmlspecialchars((string) ($_GET['fy'] ?? ''), ENT_QUOTES) ?>">
             <input type="hidden" name="dept" value="<?= htmlspecialchars((string) ($_GET['dept'] ?? ''), ENT_QUOTES) ?>">
+            <input type="hidden" name="group" value="<?= htmlspecialchars((string) ($_GET['group'] ?? ''), ENT_QUOTES) ?>">
           </form>
         <?php endforeach; endif; ?>
         <table class="data-table">
@@ -154,7 +227,7 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
         <?php if ($listing['total_pages'] > 1): ?>
           <div style="display:flex; gap:8px; justify-content:center; margin-top:16px;">
             <?php for ($p = 1; $p <= $listing['total_pages']; $p++):
-                $qs = array_filter(['fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'q' => $search ?: null, 'page' => $p]); ?>
+                $qs = array_filter(['fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'group' => $_GET['group'] ?? null, 'q' => $search ?: null, 'page' => $p], static fn ($v) => $v !== null && $v !== ''); ?>
               <a href="?<?= http_build_query($qs) ?>" class="filter-chip" style="<?= $p === $listing['page'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= $p ?></a>
             <?php endfor; ?>
           </div>
@@ -162,7 +235,8 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
       <?php endif; ?>
     </div>
 
-    <div class="card side-panel">
+  <dialog id="txn-modal" class="modal">
+    <div class="modal-inner">
       <?php if ($editingTxn): ?>
         <h2>แก้ไขรายการ</h2>
         <p class="text-muted small" style="margin-top:-8px; margin-bottom:16px;">
@@ -175,6 +249,7 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
           <input type="hidden" name="id" value="<?= (int) $editingTxn['id'] ?>">
           <input type="hidden" name="fy" value="<?= htmlspecialchars((string) ($_GET['fy'] ?? ''), ENT_QUOTES) ?>">
           <input type="hidden" name="dept" value="<?= htmlspecialchars((string) ($_GET['dept'] ?? ''), ENT_QUOTES) ?>">
+          <input type="hidden" name="group" value="<?= htmlspecialchars((string) ($_GET['group'] ?? ''), ENT_QUOTES) ?>">
 
           <div>
             <label class="field-label">ประเภทรายการ</label>
@@ -228,7 +303,7 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
 
           <div class="btn-row">
             <button type="submit" class="btn btn-primary">บันทึกการแก้ไข</button>
-            <a href="?<?= http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null])) ?>" class="btn btn-secondary">ยกเลิก</a>
+            <button type="button" class="btn btn-secondary" onclick="document.getElementById('txn-modal').close()">ยกเลิก</button>
           </div>
         </form>
 
@@ -249,7 +324,7 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
             <label class="field-label" for="line_item_id">รายการงบ</label>
             <select name="line_item_id" id="line_item_id" class="field" onchange="bpmUpdateBalancePreview()" required>
               <?php foreach ($lineItems as $li): ?>
-                <option value="<?= (int) $li['id'] ?>" data-travel="<?= (int) $li['requires_travel_detail'] ?>">
+                <option value="<?= (int) $li['id'] ?>" data-travel="<?= (int) $li['requires_travel_detail'] ?>" <?= $preselectLineItemId === (int) $li['id'] ? 'selected' : '' ?>>
                   <?= htmlspecialchars($li['name'], ENT_QUOTES) ?>
                 </option>
               <?php endforeach; ?>
@@ -314,7 +389,7 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
 
           <div class="btn-row">
             <button type="submit" class="btn btn-primary">บันทึกรายการ</button>
-            <a href="/transactions.php" class="btn btn-secondary">ยกเลิก</a>
+            <button type="button" class="btn btn-secondary" onclick="document.getElementById('txn-modal').close()">ยกเลิก</button>
           </div>
         </form>
 
@@ -349,12 +424,29 @@ $tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET
         </script>
       <?php endif; ?>
     </div>
-  </div>
+  </dialog>
 
   <script>
     function bpmConfirmDeleteTxn(btn) {
       return confirm('ลบรายการนี้ถาวร?\n\n' + btn.dataset.confirmDesc + '\n\nการลบนี้ย้อนกลับไม่ได้ (ต่างจากที่อื่นในระบบที่แค่ปิดใช้งาน) ใช้เฉพาะกรณีข้อมูลผิดพลาดจริงเท่านั้น');
     }
+
+    function bpmOpenTxnModal(lineItemId) {
+      const select = document.getElementById('line_item_id');
+      if (lineItemId > 0 && select) {
+        select.value = lineItemId;
+        if (typeof bpmUpdateBalancePreview === 'function') bpmUpdateBalancePreview();
+      }
+      document.getElementById('txn-modal').showModal();
+    }
+
+    document.getElementById('txn-modal').addEventListener('click', function (e) {
+      if (e.target === this) this.close();
+    });
+
+    <?php if ($editingTxn || $preselectLineItemId > 0): ?>
+    document.getElementById('txn-modal').showModal();
+    <?php endif; ?>
   </script>
 
 <?php require __DIR__ . '/../src/partials/layout_end.php'; ?>
