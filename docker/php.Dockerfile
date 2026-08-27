@@ -7,8 +7,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpng-dev libjpeg62-turbo-dev libfreetype6-dev \
         libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install pdo_mysql curl gd zip \
+    && docker-php-ext-install pdo_mysql curl gd zip opcache \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# เปิด OPcache — ไม่งั้นทุก request ต้อง compile ไฟล์ PHP ใหม่หมด (bootstrap.php + lib ทั้งหมด + class
+# ของ PhpSpreadsheet/Dompdf) ช้าขึ้นมากโดยเฉพาะบน Windows ที่ bind mount ทำให้ filesystem access ช้าอยู่แล้ว
+# validate_timestamps=1 (ค่า default) ไว้ให้แก้โค้ดแล้วเห็นผลทันทีโดยไม่ต้อง rebuild — เหมาะกับ dev เท่านั้น
+RUN { \
+        echo 'opcache.enable=1'; \
+        echo 'opcache.memory_consumption=128'; \
+        echo 'opcache.max_accelerated_files=10000'; \
+        echo 'opcache.validate_timestamps=1'; \
+        echo 'opcache.revalidate_freq=0'; \
+    } > /usr/local/etc/php/conf.d/opcache-dev.ini
 
 # จำลอง physical path แบบเดียวกับที่ IIS ใช้จริง (ชี้ที่ public/ เท่านั้น ไม่ใช่ root ของ repo — ดู spec.md ข้อ 10)
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
