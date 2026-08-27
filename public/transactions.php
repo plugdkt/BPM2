@@ -46,6 +46,30 @@ if ($selectedGroupId !== null) {
     }));
 }
 
+// สรุปยอดรวมต่อหมวดเงิน (ใช้ตอน tab "ทั้งหมด") — รวมทุกรายการงบตามกลุ่ม ไม่ query ซ้ำเช่นกัน
+$groupRollup = [];
+if ($selectedGroupId === null && $formDepartmentId !== null) {
+    $groupNameMapAll = array_column($groups, 'name', 'id');
+    foreach ($lineItems as $li) {
+        $gid = $li['group_id'] !== null ? (int) $li['group_id'] : 'none';
+        if (!isset($groupRollup[$gid])) {
+            $groupRollup[$gid] = [
+                'id'           => $gid,
+                'name'         => $gid === 'none' ? 'ไม่ระบุกลุ่ม' : ($groupNameMapAll[$gid] ?? ''),
+                'total_budget' => 0.0,
+                'spent'        => 0.0,
+                'balance'      => 0.0,
+            ];
+        }
+        $d = $lineItemDetails[(int) $li['id']];
+        $groupRollup[$gid]['total_budget'] += $d['total_budget'];
+        $groupRollup[$gid]['spent']        += $d['expense'] - $d['income'];
+        $groupRollup[$gid]['balance']      += $d['balance'];
+    }
+    // เรียงตามลำดับ id ของ budget_groups ก่อน แล้วค่อย "ไม่ระบุกลุ่ม" ท้ายสุด
+    uksort($groupRollup, static fn ($a, $b) => ($a === 'none' ? PHP_INT_MAX : $a) <=> ($b === 'none' ? PHP_INT_MAX : $b));
+}
+
 $preselectLineItemId = (int) ($_GET['li'] ?? 0);
 
 // ค่าเริ่มต้นของช่องวันที่ต้องอยู่ในช่วงปีงบเสมอ (ไม่ใช่ "วันนี้" เฉยๆ) เพราะวันนี้อาจอยู่นอกช่วงปีงบที่กำลังดูอยู่
@@ -119,7 +143,36 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
     </div>
   </div>
 
-  <?php if ($selectedGroupId !== null && $formDepartmentId !== null): ?>
+  <?php if ($selectedGroupId === null && $formDepartmentId !== null): ?>
+    <div class="card">
+      <h2>สรุปงบตามหมวดเงิน</h2>
+      <?php if (empty($groupRollup)): ?>
+        <p class="empty-state">สาขานี้ยังไม่มีรายการงบตั้งไว้ในปีงบนี้</p>
+      <?php else: ?>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>หมวดเงิน</th>
+              <th class="num">จัดสรร</th>
+              <th class="num">ใช้ไปแล้ว</th>
+              <th class="num">คงเหลือ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($groupRollup as $g): ?>
+              <tr>
+                <td><a href="?<?= $groupTabQs($g['id'] === 'none' ? 0 : (int) $g['id']) ?>"><?= htmlspecialchars($g['name'], ENT_QUOTES) ?></a></td>
+                <td class="num"><?= htmlspecialchars(bpm_money($g['total_budget']), ENT_QUOTES) ?></td>
+                <td class="num"><?= htmlspecialchars(bpm_money($g['spent']), ENT_QUOTES) ?></td>
+                <td class="num" style="<?= $g['balance'] < 0 ? 'color: var(--status-danger-text);' : 'color: var(--status-success-text);' ?>"><?= htmlspecialchars(bpm_money($g['balance']), ENT_QUOTES) ?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+        <p class="text-muted small" style="margin-top:12px;">คลิกชื่อหมวดเงินเพื่อดูรายละเอียดแต่ละรายการ</p>
+      <?php endif; ?>
+    </div>
+  <?php elseif ($selectedGroupId !== null && $formDepartmentId !== null): ?>
     <div class="card">
       <?php $groupNameMap = array_column($groups, 'name', 'id'); ?>
       <h2>รายการงบในหมวด "<?= htmlspecialchars($selectedGroupId === 0 ? 'ไม่ระบุกลุ่ม' : ($groupNameMap[$selectedGroupId] ?? ''), ENT_QUOTES) ?>"</h2>
