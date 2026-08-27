@@ -244,6 +244,7 @@ textarea.field { resize: vertical; min-height: 56px; }
 }
 .icon-btn-approve { background: var(--status-success-bg); color: var(--status-success-text); }
 .icon-btn-reject  { background: var(--status-danger-bg);  color: var(--status-danger-text); }
+.icon-btn-info    { background: #EFF6FF; color: var(--accent); }
 
 .form-error { font-size: 0.85rem; }
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }

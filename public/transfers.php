@@ -6,6 +6,16 @@ require_once __DIR__ . '/../src/bootstrap.php';
 
 $user = bpm_require_role('ADMIN', 'DEPT_STAFF');
 
+// เข้าหน้านี้ครั้งแรกโดยไม่ระบุ ?dept= เลย (ไม่ใช่เลือก "ทั้งหมด" ตั้งใจ) — เด้งไปสาขาแรกให้อัตโนมัติ
+// (dept="" ว่างๆ ยังคงหมายถึง "ทั้งหมด" ตามเดิม — ดู tab "ทั้งหมด" ด้านล่าง)
+if ($user['role'] !== 'DEPT_STAFF' && !isset($_GET['dept'])) {
+    $firstDeptId = bpm_db()->query('SELECT id FROM departments WHERE is_active = 1 ORDER BY name LIMIT 1')->fetchColumn();
+    if ($firstDeptId) {
+        header('Location: ?' . http_build_query(array_merge($_GET, ['dept' => $firstDeptId])));
+        exit;
+    }
+}
+
 $fiscalYear = bpm_resolve_fiscal_year();
 $selectedDepartmentId = bpm_resolve_department_filter($user);
 $selectedGroupId = isset($_GET['group']) && $_GET['group'] !== '' ? (int) $_GET['group'] : null;
@@ -23,6 +33,8 @@ if ($fiscalYear === null) {
 
 $transfers = bpm_list_transfers($selectedDepartmentId, (int) $fiscalYear['id']);
 $pendingCount = count(array_filter($transfers, static fn ($t) => $t['status'] === 'PENDING'));
+// เก็บ id ของคำขอที่ "ถูกโอนกลับไปแล้ว" ไว้ ใช้ซ่อนปุ่มโอนกลับซ้ำ + โชว์ป้ายกำกับ
+$reversedIds = array_filter(array_column($transfers, 'reversed_of_transfer_id'));
 
 $formDepartmentId = $user['role'] === 'DEPT_STAFF' ? (int) $user['department_id'] : $selectedDepartmentId;
 $lineItems = $formDepartmentId !== null ? bpm_line_items_for_department($formDepartmentId, (int) $fiscalYear['id']) : [];
@@ -60,9 +72,13 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
 ], static fn ($v) => $v !== null && $v !== ''));
 ?>
 
-  <?php if ($user['role'] !== 'DEPT_STAFF'): ?>
+  <?php if ($user['role'] !== 'DEPT_STAFF'):
+    // ต้องส่ง dept= (ว่างๆ) แบบตั้งใจ ไม่ใช่ตัด param ทิ้งไปเฉยๆ ไม่งั้นเข้าเงื่อนไข "ไม่ได้ระบุ dept" แล้วโดนเด้งกลับไปสาขาแรกอีกที
+    $allDeptParams = array_filter(['fy' => $_GET['fy'] ?? null, 'group' => $_GET['group'] ?? null], static fn ($v) => $v !== null && $v !== '');
+    $allDeptParams['dept'] = ''; ?>
     <div class="card">
       <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto;">
+        <a href="?<?= http_build_query($allDeptParams) ?>" class="filter-chip" style="<?= $selectedDepartmentId === null ? 'background:var(--accent); color:#fff;' : '' ?>">ทั้งหมด</a>
         <?php foreach (bpm_all_departments() as $d): ?>
           <a href="?<?= $tabQs((int) $d['id']) ?>" class="filter-chip" style="<?= $selectedDepartmentId === (int) $d['id'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></a>
         <?php endforeach; ?>
@@ -185,7 +201,26 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
                       </form>
                     </div>
                   <?php elseif ($t['status'] !== 'PENDING'): ?>
-                    <span class="text-muted small">โดย <?= htmlspecialchars($t['approved_by_name'] ?? '-', ENT_QUOTES) ?> · <?= htmlspecialchars(bpm_thai_date($t['decided_at']), ENT_QUOTES) ?></span>
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                      <span class="text-muted small">โดย <?= htmlspecialchars($t['approved_by_name'] ?? '-', ENT_QUOTES) ?> · <?= htmlspecialchars(bpm_thai_date($t['decided_at']), ENT_QUOTES) ?></span>
+                      <?php if ($t['reversed_of_transfer_id']): ?>
+                        <span class="pill pill-warning" style="font-size:11px;">โอนกลับคำขอ #<?= (int) $t['reversed_of_transfer_id'] ?></span>
+                      <?php elseif (in_array((int) $t['id'], $reversedIds, true)): ?>
+                        <span class="pill pill-warning" style="font-size:11px;">ถูกโอนกลับแล้ว</span>
+                      <?php elseif ($t['status'] === 'APPROVED' && $user['role'] === 'ADMIN'): ?>
+                        <form method="post" action="<?= htmlspecialchars(bpm_url('actions/reverse-transfer.php'), ENT_QUOTES) ?>" style="display:inline;">
+                          <?= bpm_csrf_field() ?>
+                          <input type="hidden" name="transfer_id" value="<?= (int) $t['id'] ?>">
+                          <input type="hidden" name="fy" value="<?= (int) $fiscalYear['id'] ?>">
+                          <?php if ($selectedDepartmentId !== null): ?><input type="hidden" name="dept" value="<?= (int) $selectedDepartmentId ?>"><?php endif; ?>
+                          <?php if ($selectedGroupId !== null): ?><input type="hidden" name="group" value="<?= (int) $selectedGroupId ?>"><?php endif; ?>
+                          <button type="submit" class="icon-btn icon-btn-info" title="โอนกลับหมวดเดิม"
+                                  onclick="return confirm('โอนกลับหมวดเดิม?\n\n<?= htmlspecialchars($t['to_name'] . ' → ' . $t['from_name'] . ' (' . bpm_money((float) $t['amount']) . ')', ENT_QUOTES) ?>\n\nระบบจะสร้างคำขอโยกย้ายใหม่ที่สลับหมวดต้นทาง/ปลายทางกัน แล้วอนุมัติให้ทันที')">
+                            <?= bpm_icon('restore', 13) ?>
+                          </button>
+                        </form>
+                      <?php endif; ?>
+                    </div>
                   <?php endif; ?>
                 </td>
                 <?php if ($user['role'] === 'ADMIN'): ?>

@@ -128,13 +128,15 @@ CREATE TABLE budget_transfers (
   requested_by      INT UNSIGNED NOT NULL,
   approved_by       INT UNSIGNED NULL,
   decided_at        DATETIME NULL,
+  reversed_of_transfer_id INT UNSIGNED NULL, -- ถ้าแถวนี้เป็นคำขอ "โอนกลับ" ที่ระบบสร้างอัตโนมัติ จะชี้ไปคำขอต้นฉบับที่ถูกโอนกลับ
   created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_transfer_fiscalyear FOREIGN KEY (fiscal_year_id)    REFERENCES fiscal_years(id),
   CONSTRAINT fk_transfer_department FOREIGN KEY (department_id)     REFERENCES departments(id),
   CONSTRAINT fk_transfer_fromitem   FOREIGN KEY (from_line_item_id) REFERENCES budget_line_items(id),
   CONSTRAINT fk_transfer_toitem     FOREIGN KEY (to_line_item_id)   REFERENCES budget_line_items(id),
   CONSTRAINT fk_transfer_requester  FOREIGN KEY (requested_by)      REFERENCES users(id),
-  CONSTRAINT fk_transfer_approver   FOREIGN KEY (approved_by)       REFERENCES users(id)
+  CONSTRAINT fk_transfer_approver   FOREIGN KEY (approved_by)       REFERENCES users(id),
+  CONSTRAINT fk_transfer_reversed_of FOREIGN KEY (reversed_of_transfer_id) REFERENCES budget_transfers(id)
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------------------------

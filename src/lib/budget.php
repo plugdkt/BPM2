@@ -404,6 +404,7 @@ const BPM_AUDIT_ACTION_LABELS = [
     'TRANSFER_APPROVE'   => 'อนุมัติโยกย้ายงบ',
     'TRANSFER_REJECT'    => 'ไม่อนุมัติโยกย้ายงบ',
     'TRANSFER_DELETE'    => 'ลบคำขอโยกย้ายงบ',
+    'TRANSFER_REVERSE'   => 'โอนงบกลับหมวดเดิม',
     'USER_PRE_PROVISION' => 'เพิ่มผู้ใช้ล่วงหน้า',
     'USER_ROLE_CHANGE'   => 'เปลี่ยนสิทธิ์ผู้ใช้',
     'FISCAL_YEAR_CLOSE'  => 'ปิดปีงบประมาณ',
