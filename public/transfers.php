@@ -37,7 +37,19 @@ $statusPill = [
 ];
 
 require __DIR__ . '/../src/partials/layout_start.php';
+
+$tabQs = static fn (int $deptId) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'dept' => $deptId]));
 ?>
+
+  <?php if ($user['role'] !== 'DEPT_STAFF'): ?>
+    <div class="card">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto;">
+        <?php foreach (bpm_all_departments() as $d): ?>
+          <a href="?<?= $tabQs((int) $d['id']) ?>" class="filter-chip" style="<?= $selectedDepartmentId === (int) $d['id'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></a>
+        <?php endforeach; ?>
+      </div>
+    </div>
+  <?php endif; ?>
 
   <?php if ($pendingCount > 0): ?>
     <p><span class="pill pill-warning">รออนุมัติ <?= $pendingCount ?> รายการ</span></p>
@@ -50,6 +62,14 @@ require __DIR__ . '/../src/partials/layout_start.php';
       <?php if (empty($transfers)): ?>
         <p class="empty-state">ยังไม่มีคำขอโยกย้ายงบในปีงบนี้</p>
       <?php else: ?>
+        <?php if ($user['role'] === 'ADMIN'): foreach ($transfers as $t): ?>
+          <form id="del-transfer-<?= (int) $t['id'] ?>" method="post" action="<?= htmlspecialchars(bpm_url('actions/delete-transfer.php'), ENT_QUOTES) ?>">
+            <?= bpm_csrf_field() ?>
+            <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
+            <input type="hidden" name="fy" value="<?= (int) $fiscalYear['id'] ?>">
+            <?php if ($selectedDepartmentId !== null): ?><input type="hidden" name="dept" value="<?= (int) $selectedDepartmentId ?>"><?php endif; ?>
+          </form>
+        <?php endforeach; endif; ?>
         <table class="data-table">
           <thead>
             <tr>
@@ -59,6 +79,7 @@ require __DIR__ . '/../src/partials/layout_start.php';
               <th class="num">จำนวนเงิน</th>
               <th class="center">สถานะ</th>
               <th>การดำเนินการ</th>
+              <?php if ($user['role'] === 'ADMIN'): ?><th style="width:40px;"></th><?php endif; ?>
             </tr>
           </thead>
           <tbody>
@@ -93,6 +114,15 @@ require __DIR__ . '/../src/partials/layout_start.php';
                     <span class="text-muted small">โดย <?= htmlspecialchars($t['approved_by_name'] ?? '-', ENT_QUOTES) ?> · <?= htmlspecialchars(bpm_thai_date($t['decided_at']), ENT_QUOTES) ?></span>
                   <?php endif; ?>
                 </td>
+                <?php if ($user['role'] === 'ADMIN'): ?>
+                  <td class="center">
+                    <button type="submit" form="del-transfer-<?= (int) $t['id'] ?>" class="icon-btn icon-btn-reject" title="ลบคำขอถาวร"
+                            data-confirm-desc="<?= htmlspecialchars($t['from_name'] . ' → ' . $t['to_name'] . ' (' . bpm_money((float) $t['amount']) . ') สถานะ: ' . $pillLabel, ENT_QUOTES) ?>"
+                            onclick="return bpmConfirmDeleteTransfer(this)">
+                      <?= bpm_icon('trash', 13) ?>
+                    </button>
+                  </td>
+                <?php endif; ?>
               </tr>
             <?php endforeach; ?>
           </tbody>
@@ -175,5 +205,10 @@ require __DIR__ . '/../src/partials/layout_start.php';
     </div>
   </div>
 
-<?php require __DIR__ . '/../src/partials/layout_end.php'; ?>
+  <script>
+    function bpmConfirmDeleteTransfer(btn) {
+      return confirm('ลบคำขอโยกย้ายงบนี้ถาวร?\n\n' + btn.dataset.confirmDesc + '\n\nการลบนี้ย้อนกลับไม่ได้ ถ้าเคยอนุมัติแล้ว ยอดคงเหลือของหมวดที่เกี่ยวข้องจะเปลี่ยนทันที ใช้เฉพาะกรณีข้อมูลผิดพลาดจริงเท่านั้น');
+    }
+  </script>
 
+<?php require __DIR__ . '/../src/partials/layout_end.php'; ?>
