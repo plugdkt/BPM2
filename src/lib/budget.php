@@ -249,7 +249,7 @@ function bpm_list_transactions(?int $departmentId, int $fiscalYearId, int $page 
 
     $offset = ($page - 1) * $perPage;
     $rowsStmt = $db->prepare(
-        "SELECT t.*, li.name AS line_item_name, li.department_id, d.name AS department_name
+        "SELECT t.*, li.name AS line_item_name, li.department_id, li.requires_travel_detail, d.name AS department_name
          FROM transactions t
          JOIN budget_line_items li ON li.id = t.line_item_id
          JOIN departments d ON d.id = li.department_id

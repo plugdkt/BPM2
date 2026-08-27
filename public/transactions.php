@@ -37,7 +37,42 @@ foreach ($lineItems as $li) {
 $todayStr = (new DateTimeImmutable())->format('Y-m-d');
 $defaultTxnDate = max($fiscalYear['start_date'], min($todayStr, $fiscalYear['end_date']));
 
+// --- แก้ไขรายการ (ถ้ามี ?edit=ID และมีสิทธิ์) — ไม่ผูกกับ $formDepartmentId/$lineItems เพราะแก้ line_item เดิมเสมอ ไม่ให้ย้ายสาขา ---
+$editingTxn = null;
+$editingTravel = null;
+$editingFiscalYear = null;
+$editId = (int) ($_GET['edit'] ?? 0);
+if ($editId > 0) {
+    $stmt = bpm_db()->prepare(
+        'SELECT t.*, li.name AS line_item_name, li.requires_travel_detail, d.name AS department_name
+         FROM transactions t
+         JOIN budget_line_items li ON li.id = t.line_item_id
+         JOIN departments d ON d.id = li.department_id
+         WHERE t.id = ?'
+    );
+    $stmt->execute([$editId]);
+    $candidate = $stmt->fetch();
+
+    if ($candidate && ($user['role'] === 'ADMIN' || (int) $candidate['created_by'] === (int) $user['id'])) {
+        $editingTxn = $candidate;
+        if ((int) $editingTxn['requires_travel_detail'] === 1) {
+            $tStmt = bpm_db()->prepare('SELECT * FROM travel_records WHERE transaction_id = ?');
+            $tStmt->execute([$editId]);
+            $editingTravel = $tStmt->fetch() ?: null;
+        }
+        $fyStmt = bpm_db()->prepare('SELECT * FROM fiscal_years WHERE id = (SELECT fiscal_year_id FROM budget_line_items WHERE id = ?)');
+        $fyStmt->execute([$editingTxn['line_item_id']]);
+        $editingFiscalYear = $fyStmt->fetch();
+    } else {
+        bpm_flash_set('danger', $candidate ? 'ไม่มีสิทธิ์แก้ไขรายการนี้' : 'ไม่พบรายการที่ต้องการแก้ไข');
+    }
+}
+
 require __DIR__ . '/../src/partials/layout_start.php';
+
+$rowQs = static fn (int $id) => http_build_query(array_filter([
+    'fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'page' => $page, 'q' => $search ?: null, 'edit' => $id,
+]));
 ?>
 
   <div class="two-col">
@@ -65,10 +100,12 @@ require __DIR__ . '/../src/partials/layout_start.php';
               <th>เลขที่อ้างอิง</th>
               <th class="center">ประเภท</th>
               <th class="num">จำนวนเงิน</th>
+              <th style="width:50px;"></th>
             </tr>
           </thead>
           <tbody>
-            <?php foreach ($listing['rows'] as $t): ?>
+            <?php foreach ($listing['rows'] as $t):
+              $canEdit = $user['role'] === 'ADMIN' || (int) $t['created_by'] === (int) $user['id']; ?>
               <tr>
                 <td class="center"><?= htmlspecialchars(bpm_thai_date($t['txn_date']), ENT_QUOTES) ?></td>
                 <?php if ($selectedDepartmentId === null): ?><td><?= htmlspecialchars($t['department_name'], ENT_QUOTES) ?></td><?php endif; ?>
@@ -77,6 +114,11 @@ require __DIR__ . '/../src/partials/layout_start.php';
                 <td class="center"><span class="pill <?= $t['type'] === 'EXPENSE' ? 'pill-neutral' : 'pill-success' ?>"><?= $t['type'] === 'EXPENSE' ? 'รายจ่าย' : 'รายรับ' ?></span></td>
                 <td class="num" style="<?= $t['type'] === 'INCOME' ? 'color: var(--status-success-text);' : '' ?>">
                   <?= $t['type'] === 'EXPENSE' ? '-' : '+' ?><?= htmlspecialchars(bpm_money((float) $t['amount']), ENT_QUOTES) ?>
+                </td>
+                <td class="center">
+                  <?php if ($canEdit): ?>
+                    <a href="?<?= $rowQs((int) $t['id']) ?>" class="icon-btn icon-btn-approve" title="แก้ไขรายการ" style="display:inline-flex;"><?= bpm_icon('edit', 13) ?></a>
+                  <?php endif; ?>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -95,13 +137,83 @@ require __DIR__ . '/../src/partials/layout_start.php';
     </div>
 
     <div class="card side-panel">
-      <h2>บันทึกรายการใหม่</h2>
+      <?php if ($editingTxn): ?>
+        <h2>แก้ไขรายการ</h2>
+        <p class="text-muted small" style="margin-top:-8px; margin-bottom:16px;">
+          <?= htmlspecialchars($editingTxn['department_name'], ENT_QUOTES) ?> — <?= htmlspecialchars($editingTxn['line_item_name'], ENT_QUOTES) ?><br>
+          ไม่สามารถเปลี่ยนรายการงบได้ — ถ้าเลือกรายการผิดทั้งหมด ให้บันทึกรายการใหม่แทนแล้วปิดใช้งานรายการนี้ทีหลัง
+        </p>
 
-      <?php if ($formDepartmentId === null): ?>
+        <form method="post" action="<?= htmlspecialchars(bpm_url('actions/update-transaction.php'), ENT_QUOTES) ?>" id="edit-txn-form" class="field-group">
+          <?= bpm_csrf_field() ?>
+          <input type="hidden" name="id" value="<?= (int) $editingTxn['id'] ?>">
+          <input type="hidden" name="fy" value="<?= htmlspecialchars((string) ($_GET['fy'] ?? ''), ENT_QUOTES) ?>">
+          <input type="hidden" name="dept" value="<?= htmlspecialchars((string) ($_GET['dept'] ?? ''), ENT_QUOTES) ?>">
+
+          <div>
+            <label class="field-label">ประเภทรายการ</label>
+            <div class="type-toggle">
+              <label><input type="radio" name="type" value="EXPENSE" <?= $editingTxn['type'] === 'EXPENSE' ? 'checked' : '' ?>> รายจ่าย</label>
+              <label><input type="radio" name="type" value="INCOME" <?= $editingTxn['type'] === 'INCOME' ? 'checked' : '' ?>> รายรับ</label>
+            </div>
+          </div>
+
+          <div>
+            <label class="field-label" for="edit_amount">จำนวนเงิน (บาท)</label>
+            <input type="text" inputmode="decimal" name="amount" id="edit_amount" class="field num" value="<?= number_format((float) $editingTxn['amount'], 2, '.', '') ?>" required>
+          </div>
+
+          <div>
+            <label class="field-label" for="edit_txn_date">วันที่ทำรายการ</label>
+            <input type="date" name="txn_date" id="edit_txn_date" class="field" value="<?= htmlspecialchars($editingTxn['txn_date'], ENT_QUOTES) ?>"
+                   min="<?= htmlspecialchars($editingFiscalYear['start_date'], ENT_QUOTES) ?>" max="<?= htmlspecialchars($editingFiscalYear['end_date'], ENT_QUOTES) ?>" required>
+          </div>
+
+          <div>
+            <label class="field-label" for="edit_description">รายละเอียด</label>
+            <textarea name="description" id="edit_description" class="field" required><?= htmlspecialchars($editingTxn['description'], ENT_QUOTES) ?></textarea>
+          </div>
+
+          <div>
+            <label class="field-label" for="edit_reference_no">เลขที่อ้างอิง (ถ้ามี)</label>
+            <input type="text" name="reference_no" id="edit_reference_no" class="field" value="<?= htmlspecialchars((string) $editingTxn['reference_no'], ENT_QUOTES) ?>">
+          </div>
+
+          <?php if ((int) $editingTxn['requires_travel_detail'] === 1): ?>
+            <div class="field-group">
+              <div>
+                <label class="field-label" for="edit_instructor_name">ชื่อผู้เดินทาง</label>
+                <input type="text" name="instructor_name" id="edit_instructor_name" class="field" value="<?= htmlspecialchars((string) ($editingTravel['instructor_name'] ?? ''), ENT_QUOTES) ?>" required>
+              </div>
+              <div>
+                <label class="field-label" for="edit_purpose">รายละเอียดการเดินทาง/ประชุม/อบรม</label>
+                <textarea name="purpose" id="edit_purpose" class="field" required><?= htmlspecialchars((string) ($editingTravel['purpose'] ?? ''), ENT_QUOTES) ?></textarea>
+              </div>
+              <div>
+                <label class="field-label" for="edit_installment_no">งวดที่</label>
+                <input type="number" name="installment_no" id="edit_installment_no" class="field" value="<?= (int) ($editingTravel['installment_no'] ?? 1) ?>" min="1">
+              </div>
+              <div>
+                <label class="field-label" for="edit_travel_ref_doc">เลขที่เอกสารอ้างอิง</label>
+                <input type="text" name="travel_ref_doc" id="edit_travel_ref_doc" class="field" value="<?= htmlspecialchars((string) ($editingTravel['ref_doc_no'] ?? ''), ENT_QUOTES) ?>">
+              </div>
+            </div>
+          <?php endif; ?>
+
+          <div class="btn-row">
+            <button type="submit" class="btn btn-primary">บันทึกการแก้ไข</button>
+            <a href="?<?= http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null])) ?>" class="btn btn-secondary">ยกเลิก</a>
+          </div>
+        </form>
+
+      <?php elseif ($formDepartmentId === null): ?>
+        <h2>บันทึกรายการใหม่</h2>
         <p class="empty-state">เลือกสาขาที่ต้องการบันทึกรายการจาก dropdown ด้านบนก่อน (ไม่สามารถบันทึกตอนดู "ทั้งหมด" ได้)</p>
       <?php elseif (empty($lineItems)): ?>
+        <h2>บันทึกรายการใหม่</h2>
         <p class="empty-state">สาขานี้ยังไม่มีรายการงบตั้งไว้ในปีงบนี้ — ให้ ADMIN สร้างที่หน้าตั้งค่างบประมาณก่อน</p>
       <?php else: ?>
+        <h2>บันทึกรายการใหม่</h2>
         <form method="post" action="<?= htmlspecialchars(bpm_url('actions/create-transaction.php'), ENT_QUOTES) ?>" id="txn-form" class="field-group">
           <?= bpm_csrf_field() ?>
           <input type="hidden" name="fy" value="<?= (int) $fiscalYear['id'] ?>">
@@ -214,4 +326,3 @@ require __DIR__ . '/../src/partials/layout_start.php';
   </div>
 
 <?php require __DIR__ . '/../src/partials/layout_end.php'; ?>
-
