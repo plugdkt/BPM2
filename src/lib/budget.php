@@ -397,6 +397,62 @@ function bpm_pending_transfer_count(?int $departmentId = null): int
     return (int) $stmt->fetchColumn();
 }
 
+const BPM_AUDIT_ACTION_LABELS = [
+    'LINE_ITEM_UPDATE'   => 'แก้ไขรายการงบ',
+    'TRANSACTION_UPDATE' => 'แก้ไขรายการเบิกจ่าย/รายรับ',
+    'TRANSACTION_DELETE' => 'ลบรายการเบิกจ่าย/รายรับ',
+    'TRANSFER_APPROVE'   => 'อนุมัติโยกย้ายงบ',
+    'TRANSFER_REJECT'    => 'ไม่อนุมัติโยกย้ายงบ',
+    'TRANSFER_DELETE'    => 'ลบคำขอโยกย้ายงบ',
+    'USER_PRE_PROVISION' => 'เพิ่มผู้ใช้ล่วงหน้า',
+    'USER_ROLE_CHANGE'   => 'เปลี่ยนสิทธิ์ผู้ใช้',
+    'FISCAL_YEAR_CLOSE'  => 'ปิดปีงบประมาณ',
+];
+
+/** ป้ายชื่อภาษาไทยของ audit_logs.action — คืนค่า action เดิมถ้าไม่รู้จัก (กันพังถ้ามี action ใหม่ในอนาคต) */
+function bpm_audit_action_label(string $action): string
+{
+    return BPM_AUDIT_ACTION_LABELS[$action] ?? $action;
+}
+
+/** ประวัติการเปลี่ยนแปลงทั้งหมด (audit trail) — ใช้ทำหน้า admin/audit-log.php เท่านั้น (ADMIN only) */
+function bpm_list_audit_logs(?string $action = null, int $page = 1, int $perPage = 50): array
+{
+    $db = bpm_db();
+    $page = max(1, $page);
+    $perPage = max(1, min(200, $perPage));
+
+    $params = [];
+    $actionFilter = '';
+    if ($action !== null && $action !== '') {
+        $actionFilter = ' WHERE al.action = ?';
+        $params[] = $action;
+    }
+
+    $countStmt = $db->prepare("SELECT COUNT(*) FROM audit_logs al{$actionFilter}");
+    $countStmt->execute($params);
+    $total = (int) $countStmt->fetchColumn();
+
+    $offset = ($page - 1) * $perPage;
+    $rowsStmt = $db->prepare(
+        "SELECT al.*, u.name AS actor_name
+         FROM audit_logs al
+         JOIN users u ON u.id = al.actor_id
+         {$actionFilter}
+         ORDER BY al.created_at DESC, al.id DESC
+         LIMIT {$perPage} OFFSET {$offset}"
+    );
+    $rowsStmt->execute($params);
+
+    return [
+        'rows'        => $rowsStmt->fetchAll(),
+        'total'       => $total,
+        'page'        => $page,
+        'per_page'    => $perPage,
+        'total_pages' => (int) max(1, ceil($total / $perPage)),
+    ];
+}
+
 /** แปลงจำนวนเงินเป็นข้อความ ฿X,XXX.XX ตามมาตรฐาน UI (ดู spec.md ข้อ 8) */
 function bpm_money(float $amount): string
 {
