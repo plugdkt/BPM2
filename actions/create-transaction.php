@@ -2,5 +2,6 @@
 
 declare(strict_types=1);
 
-// Endpoint บาง ๆ ที่ web เข้าถึงได้จริง — ตรรกะจริงทั้งหมดอยู่ใน src/actions/ (นอก webroot ตามข้อ 10)
-require __DIR__ . '/../../src/actions/create-transaction.php';
+// ⚠️ ห้ามแก้ไข/copy เนื้อหาเข้ามาในไฟล์นี้เด็ดขาด — เป็นแค่ wrapper บางๆ ตัวจริงอยู่ที่ src/actions/create-transaction.php
+// เคย copy เนื้อหาเต็ม/path ผิดมาทับตรงนี้มาแล้ว 2 ครั้ง (ไฟล์นี้อยู่ลึกจาก root แค่ 1 ชั้น ไม่ใช่ 2 ชั้นเหมือน public/actions/)
+require __DIR__ . '/../src/actions/create-transaction.php';
