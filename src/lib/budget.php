@@ -110,7 +110,7 @@ function bpm_department_summary(?int $departmentId, int $fiscalYearId): array
          LEFT JOIN (
             SELECT line_item_id AS id, SUM(amount) AS amt FROM transactions WHERE type = 'INCOME' GROUP BY line_item_id
          ) tx_inc ON tx_inc.id = li.id
-         WHERE li.fiscal_year_id = ?{$deptFilter}"
+         WHERE li.fiscal_year_id = ? AND li.is_active = 1{$deptFilter}"
     );
     $stmt->execute($params);
     $row = $stmt->fetch();
@@ -183,7 +183,7 @@ function bpm_group_comparison(?int $departmentId, int $fiscalYearId): array
          LEFT JOIN (
             SELECT line_item_id AS id, SUM(amount) AS amt FROM transactions WHERE type = 'INCOME' GROUP BY line_item_id
          ) tx_inc ON tx_inc.id = li.id
-         WHERE g.is_active = 1
+         WHERE g.is_active = 1 AND li.is_active = 1
          GROUP BY g.id, g.name
          ORDER BY g.id"
     );
