@@ -450,7 +450,9 @@ CREATE TABLE audit_logs (
 5. สร้างฐานข้อมูลและรัน `sql/schema.sql`
 6. Deploy โค้ดขึ้นเครื่อง (`git clone` หรือ copy ไฟล์), รัน `composer install --no-dev` เพื่อดึง PhpSpreadsheet/Dompdf
 7. สร้าง `config/config.php` (ไม่ commit เข้า git — ใส่ใน `.gitignore`) ใส่ DB host/user/password/name **และ** `sso_client_id`/`sso_client_secret`/`sso_redirect_uri` ที่ได้จากการลงทะเบียนในข้อ 3.2
-8. สร้าง IIS Site ใหม่ → Physical path ชี้ที่โฟลเดอร์ `public/` → ผูก Application Pool (.NET CLR = No Managed Code เพราะ PHP ไม่ใช้ .NET pipeline)
+8. สร้าง IIS Site ใหม่ → Physical path ชี้ที่โฟลเดอร์ `public/` (แนะนำ — ปลอดภัยสุดเพราะ `config/`, `src/`, `sql/`, `vendor/` อยู่นอก webroot โดยธรรมชาติ) → ผูก Application Pool (.NET CLR = No Managed Code เพราะ PHP ไม่ใช้ .NET pipeline)
+
+   **ถ้า physical path ต้องชี้ที่ root ของ repo แทน** (เช่น ข้อจำกัดของ site ที่ provision ไว้แล้ว) — ระบบรองรับผ่าน root-level wrapper files (`index.php`, `login.php`, `admin/*.php`, `actions/*.php` ฯลฯ ที่ root แค่ `require` ไฟล์จริงใน `public/`) และ `bpm_url()` ที่คำนวณ base path จาก `SCRIPT_NAME` อัตโนมัติ **แต่ต้องมี root-level `web.config` ที่บล็อก `hiddenSegments` สำหรับ `config`, `src`, `sql`, `vendor`, `docker`, `.git`, `ψ` ไว้เสมอ** (มีให้แล้วที่ root ของ repo) ไม่งั้น `config/config.php` (DB password + SSO secret) และ `sql/schema.sql` จะเข้าถึงได้ตรงๆ ผ่าน URL — **เจอจริงตอน deploy**: ทีมตั้ง site ไว้ที่ root โดยไม่รู้ตัวว่าต้องล็อกโฟลเดอร์พวกนี้เพิ่ม
 9. ให้สิทธิ์ **Read** แก่ `IIS AppPool\<ชื่อ pool>` บนทั้งโปรเจกต์ และ **Write** เฉพาะโฟลเดอร์ที่จำเป็น (เช่น session file path, export temp file ถ้ามี)
 10. ตั้งค่า binding + HTTPS cert (จำเป็น — SSO callback ต้องเป็น HTTPS) แล้วแจ้ง URL จริงกลับไปปรับ `redirect_uri` ที่ลงทะเบียนไว้กับ MEDSCI ACC ให้ตรงกัน
 11. ทดสอบ: เปิดหน้า login → กด login ด้วย UP Account จริง (หรือบัญชี dev bypass ตามข้อ 3.5) → ตรวจว่า callback ทำงาน จับคู่/สร้าง user ได้ → บันทึกรายการทดสอบ → ตรวจว่า error ไม่หลุดออกมาเป็น PHP stack trace (`display_errors = Off` บน production, log error ลงไฟล์แทนด้วย `log_errors = On`)
