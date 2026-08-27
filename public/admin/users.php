@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 $user = bpm_require_role('ADMIN');
 $pageTitle = 'จัดการผู้ใช้';
-$activeNav = 'admin';
+$activeNav = 'admin-users';
 
 $rows = bpm_db()->query('SELECT * FROM users ORDER BY (role IS NULL) DESC, is_active DESC, name')->fetchAll();
 $departments = bpm_all_departments();

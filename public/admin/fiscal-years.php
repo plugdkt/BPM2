@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 $user = bpm_require_role('ADMIN');
 $pageTitle = 'ตั้งค่าปีงบประมาณ';
-$activeNav = 'admin';
+$activeNav = 'admin-fiscal-years';
 
 $rows = bpm_db()->query('SELECT * FROM fiscal_years ORDER BY year_be DESC')->fetchAll();
 

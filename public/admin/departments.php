@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 $user = bpm_require_role('ADMIN');
 $pageTitle = 'ตั้งค่าสาขาวิชา';
-$activeNav = 'admin';
+$activeNav = 'admin-departments';
 
 $rows = bpm_db()->query('SELECT * FROM departments ORDER BY is_active DESC, name')->fetchAll();
 

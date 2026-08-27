@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 $user = bpm_require_role('ADMIN');
 $pageTitle = 'ตั้งค่างบประมาณ';
-$activeNav = 'admin';
+$activeNav = 'admin-allocations';
 
 $departments = bpm_all_departments();
 $fiscalYears = bpm_all_fiscal_years();

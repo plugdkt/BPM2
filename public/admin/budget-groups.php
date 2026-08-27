@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 $user = bpm_require_role('ADMIN');
 $pageTitle = 'ตั้งค่ากลุ่มหมวดงบ';
-$activeNav = 'admin';
+$activeNav = 'admin-budget-groups';
 
 $rows = bpm_db()->query('SELECT * FROM budget_groups ORDER BY is_active DESC, id')->fetchAll();
 

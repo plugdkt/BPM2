@@ -7,7 +7,8 @@ require_once __DIR__ . '/icons.php';
 /**
  * เปิด layout กลาง (sidebar + header) — ต้องตั้งตัวแปรเหล่านี้ก่อน require ไฟล์นี้เสมอ:
  *   $pageTitle            string  หัวข้อหน้า (แสดงใน <title> และ topbar)
- *   $activeNav            string  หนึ่งใน 'dashboard'|'transactions'|'transfers'|'reports'
+ *   $activeNav            string  หนึ่งใน 'dashboard'|'transactions'|'transfers'|'reports'|
+ *                                 'admin-allocations'|'admin-departments'|'admin-budget-groups'|'admin-fiscal-years'|'admin-users'
  *   $user                 array   จาก bpm_require_role()
  * ตัวแปร optional:
  *   $fiscalYear            ?array  ปีงบที่กำลังดูอยู่ (จาก bpm_resolve_fiscal_year()) — ไม่ตั้งจะไม่โชว์ filter
@@ -56,12 +57,22 @@ $navItems = [
         </a>
       <?php endforeach; ?>
 
-      <?php if ($user['role'] === 'ADMIN'): ?>
+      <?php if ($user['role'] === 'ADMIN'):
+        $adminItems = [
+            ['key' => 'admin-allocations',   'label' => 'ตั้งค่างบ',       'href' => bpm_url('admin/allocations.php')],
+            ['key' => 'admin-departments',   'label' => 'สาขาวิชา',        'href' => bpm_url('admin/departments.php')],
+            ['key' => 'admin-budget-groups', 'label' => 'กลุ่มหมวดงบ',     'href' => bpm_url('admin/budget-groups.php')],
+            ['key' => 'admin-fiscal-years',  'label' => 'ปีงบประมาณ',      'href' => bpm_url('admin/fiscal-years.php')],
+            ['key' => 'admin-users',         'label' => 'จัดการผู้ใช้',     'href' => bpm_url('admin/users.php')],
+        ]; ?>
         <div class="sidebar-divider"></div>
-        <a href="<?= htmlspecialchars(bpm_url('admin/allocations.php'), ENT_QUOTES) ?>" class="<?= $activeNav === 'admin' ? 'active' : '' ?>">
-          <?= bpm_icon('gear', 18) ?>
-          ตั้งค่างบ
-        </a>
+        <div class="sidebar-section-label">ผู้ดูแลระบบ</div>
+        <?php foreach ($adminItems as $item): ?>
+          <a href="<?= htmlspecialchars($item['href'], ENT_QUOTES) ?>" class="<?= $activeNav === $item['key'] ? 'active' : '' ?>">
+            <?= bpm_icon('gear', 18) ?>
+            <?= htmlspecialchars($item['label'], ENT_QUOTES) ?>
+          </a>
+        <?php endforeach; ?>
       <?php endif; ?>
     </nav>
   </aside>
