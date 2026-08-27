@@ -204,7 +204,7 @@ function bpm_require_login(): array
 
     $user = bpm_current_user();
     if ($user === null) {
-        header('Location: /login.php');
+        header('Location: ' . bpm_url('login.php'));
         exit;
     }
 
@@ -220,7 +220,7 @@ function bpm_require_role(string ...$roles): array
     $user = bpm_require_login();
 
     if ($user['role'] === null) {
-        header('Location: /pending-access.php');
+        header('Location: ' . bpm_url('pending-access.php'));
         exit;
     }
 
@@ -247,7 +247,7 @@ function bpm_enforce_session_idle_timeout(): void
 
     if (time() - $lastActivity > $timeout) {
         session_destroy();
-        header('Location: /login.php?reason=idle_timeout');
+        header('Location: ' . bpm_url('login.php?reason=idle_timeout'));
         exit;
     }
 

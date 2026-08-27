@@ -102,7 +102,7 @@ require __DIR__ . '/../src/partials/layout_start.php';
       <?php elseif (empty($lineItems)): ?>
         <p class="empty-state">สาขานี้ยังไม่มีรายการงบตั้งไว้ในปีงบนี้ — ให้ ADMIN สร้างที่หน้าตั้งค่างบประมาณก่อน</p>
       <?php else: ?>
-        <form method="post" action="/actions/create-transaction.php" id="txn-form" class="field-group">
+        <form method="post" action="<?= htmlspecialchars(bpm_url('actions/create-transaction.php'), ENT_QUOTES) ?>" id="txn-form" class="field-group">
           <?= bpm_csrf_field() ?>
           <input type="hidden" name="fy" value="<?= (int) $fiscalYear['id'] ?>">
           <input type="hidden" name="dept" value="<?= (int) $formDepartmentId ?>">
@@ -214,3 +214,4 @@ require __DIR__ . '/../src/partials/layout_start.php';
   </div>
 
 <?php require __DIR__ . '/../src/partials/layout_end.php'; ?>
+

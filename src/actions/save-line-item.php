@@ -10,7 +10,7 @@ $user = bpm_require_role('ADMIN');
 
 $departmentId = (int) ($_POST['department_id'] ?? 0);
 $fiscalYearId = (int) ($_POST['fiscal_year_id'] ?? 0);
-$redirectBack = '/admin/allocations.php?' . http_build_query(array_filter([
+$redirectBack = bpm_url('admin/allocations.php?') . http_build_query(array_filter([
     'dept' => $departmentId ?: null,
     'fy'   => $fiscalYearId ?: null,
 ]));
@@ -90,3 +90,4 @@ try {
 bpm_flash_set('success', 'บันทึกรายการงบเรียบร้อยแล้ว');
 header('Location: ' . $redirectBack);
 exit;
+

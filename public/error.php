@@ -30,13 +30,13 @@ if ($type === 'not_authorized' && !empty($_GET['message'])) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>เข้าสู่ระบบไม่สำเร็จ — BPM</title>
-<link rel="stylesheet" href="/assets/css/app.css">
+<link rel="stylesheet" href="<?= htmlspecialchars(bpm_url('assets/css/app.css'), ENT_QUOTES) ?>">
 </head>
 <body class="page-login">
   <div class="login-card">
     <h1>เข้าสู่ระบบไม่สำเร็จ</h1>
     <p class="alert alert-danger"><?= htmlspecialchars($displayMessage, ENT_QUOTES) ?></p>
-    <a class="btn btn-primary btn-block" href="/login.php">ลองเข้าสู่ระบบใหม่</a>
+    <a class="btn btn-primary btn-block" href="<?= htmlspecialchars(bpm_url('login.php'), ENT_QUOTES) ?>">ลองเข้าสู่ระบบใหม่</a>
   </div>
 </body>
 </html>

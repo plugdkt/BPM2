@@ -9,12 +9,12 @@ require_once __DIR__ . '/../bootstrap.php';
 $user = bpm_require_role('ADMIN');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: /admin/fiscal-years.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 if (!bpm_csrf_verify($_POST['csrf_token'] ?? null)) {
     bpm_flash_set('danger', 'คำขอไม่ถูกต้องหรือหมดเวลา');
-    header('Location: /admin/fiscal-years.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 
@@ -47,10 +47,11 @@ try {
     if (!$e instanceof RuntimeException) {
         error_log('[BPM] close-fiscal-year failed: ' . $e->getMessage());
     }
-    header('Location: /admin/fiscal-years.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 
 bpm_flash_set('success', 'ปิดปีงบประมาณ พ.ศ. ' . $fy['year_be'] . ' เรียบร้อยแล้ว');
-header('Location: /admin/fiscal-years.php');
+header('Location: ' . bpm_url(''));
 exit;
+

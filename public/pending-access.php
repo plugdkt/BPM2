@@ -8,7 +8,7 @@ $user = bpm_require_login(); // ต้อง login แล้ว แค่ role �
 
 // ถ้า ADMIN กำหนดสิทธิ์ให้แล้วตั้งแต่รอบก่อน ไม่ต้องมาเห็นหน้านี้อีก
 if ($user['role'] !== null) {
-    header('Location: /index.php');
+    header('Location: ' . bpm_url('index.php'));
     exit;
 }
 ?>
@@ -18,7 +18,7 @@ if ($user['role'] !== null) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>รอกำหนดสิทธิ์การใช้งาน — BPM</title>
-<link rel="stylesheet" href="/assets/css/app.css">
+<link rel="stylesheet" href="<?= htmlspecialchars(bpm_url('assets/css/app.css'), ENT_QUOTES) ?>">
 </head>
 <body class="page-login">
   <div class="login-card">
@@ -28,7 +28,7 @@ if ($user['role'] !== null) {
       แต่ยังไม่ได้รับการกำหนดสิทธิ์ใช้งานในระบบ BPM
     </p>
     <p class="text-muted">กรุณาติดต่อผู้ดูแลระบบเพื่อขอกำหนดสิทธิ์ (บทบาท + สาขาวิชา) ก่อนเข้าใช้งาน</p>
-    <a class="btn btn-secondary btn-block" href="/logout.php">ออกจากระบบ</a>
+    <a class="btn btn-secondary btn-block" href="<?= htmlspecialchars(bpm_url('logout.php'), ENT_QUOTES) ?>">ออกจากระบบ</a>
   </div>
 </body>
 </html>

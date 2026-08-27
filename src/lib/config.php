@@ -21,3 +21,28 @@ function bpm_config(): array
 
     return $config;
 }
+
+/**
+ * คำนวณ Base URL หรือ Path ให้ตรงกับโฟลเดอร์ที่ deploy จริง
+ */
+function bpm_url(string $path = ''): string
+{
+    if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+        return $path;
+    }
+
+    $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+    $scriptDir = str_replace('\\', '/', dirname($scriptName));
+
+    if (str_ends_with($scriptDir, '/admin') || str_ends_with($scriptDir, '/actions')) {
+        $scriptDir = str_replace('\\', '/', dirname($scriptDir));
+    }
+
+    if ($scriptDir === '/' || $scriptDir === '.') {
+        $scriptDir = '';
+    }
+
+    $path = '/' . ltrim($path, '/');
+    return $scriptDir . $path;
+}
+

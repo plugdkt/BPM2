@@ -9,11 +9,11 @@ require_once __DIR__ . '/../bootstrap.php';
 $user = bpm_require_role('ADMIN', 'DEPT_STAFF');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: /transfers.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 
-$redirectBack = '/transfers.php?' . http_build_query(array_filter([
+$redirectBack = bpm_url('transfers.php?') . http_build_query(array_filter([
     'fy'   => $_POST['fy'] ?? null,
     'dept' => $_POST['dept'] ?? null,
 ]));
@@ -102,3 +102,4 @@ $insert->execute([
 bpm_flash_set('success', 'ยื่นคำขอโยกย้ายงบเรียบร้อยแล้ว รอ ADMIN อนุมัติ');
 header('Location: ' . $redirectBack);
 exit;
+

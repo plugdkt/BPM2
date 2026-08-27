@@ -12,11 +12,11 @@ require_once __DIR__ . '/../bootstrap.php';
 $user = bpm_require_role('ADMIN', 'DEPT_STAFF');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: /transactions.php');
+    header('Location: ' . bpm_url(''));
     exit;
 }
 
-$redirectBack = '/transactions.php?' . http_build_query(array_filter([
+$redirectBack = bpm_url('transactions.php?') . http_build_query(array_filter([
     'fy'   => $_POST['fy'] ?? null,
     'dept' => $_POST['dept'] ?? null,
 ]));
@@ -135,3 +135,4 @@ try {
 bpm_flash_set('success', 'บันทึกรายการเรียบร้อยแล้ว');
 header('Location: ' . $redirectBack);
 exit;
+

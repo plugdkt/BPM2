@@ -6,7 +6,7 @@ require_once __DIR__ . '/../src/bootstrap.php';
 
 // ถ้า login อยู่แล้วไม่ต้องเห็นหน้านี้ซ้ำ
 if (bpm_current_user() !== null) {
-    header('Location: /index.php');
+    header('Location: ' . bpm_url('index.php'));
     exit;
 }
 
@@ -25,7 +25,7 @@ $reason = $_GET['reason'] ?? null;
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>เข้าสู่ระบบ — BPM</title>
-<link rel="stylesheet" href="/assets/css/app.css">
+<link rel="stylesheet" href="<?= htmlspecialchars(bpm_url('assets/css/app.css'), ENT_QUOTES) ?>">
 </head>
 <body class="page-login">
   <div class="login-card">
@@ -36,7 +36,7 @@ $reason = $_GET['reason'] ?? null;
       <p class="alert alert-warning">เซสชันหมดอายุเนื่องจากไม่มีการใช้งาน กรุณาเข้าสู่ระบบใหม่อีกครั้ง</p>
     <?php endif; ?>
 
-    <a class="btn btn-primary btn-block" href="/login.php?start=1">
+    <a class="btn btn-primary btn-block" href="<?= htmlspecialchars(bpm_url('login.php?start=1'), ENT_QUOTES) ?>">
       เข้าสู่ระบบด้วยบัญชี UP Account
     </a>
 
