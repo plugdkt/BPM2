@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../src/bootstrap.php';
 
-$user = bpm_require_role('ADMIN', 'DEPT_STAFF');
+$user = bpm_require_role('ADMIN', 'DEPT_STAFF', 'DEPT_HEAD');
 
 // เข้าหน้านี้ครั้งแรกโดยไม่ระบุ ?dept= เลย (ไม่ใช่เลือก "ทั้งหมด" ตั้งใจ) — เด้งไปสาขาแรกให้อัตโนมัติ
 // เพื่อให้เห็นสรุปหมวดเงิน/ฟอร์มบันทึกรายการทันทีโดยไม่ต้องคลิกเลือกสาขาเอง (dept="" ว่างๆ ยังคงหมายถึง "ทั้งหมด" ตามเดิม)
-if ($user['role'] !== 'DEPT_STAFF' && !isset($_GET['dept'])) {
+if (!in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true) && !isset($_GET['dept'])) {
     $firstDeptId = bpm_db()->query('SELECT id FROM departments WHERE is_active = 1 ORDER BY name LIMIT 1')->fetchColumn();
     if ($firstDeptId) {
         header('Location: ?' . http_build_query(array_merge($_GET, ['dept' => $firstDeptId])));
@@ -36,8 +36,10 @@ if ($fiscalYear === null) {
 
 $listing = bpm_list_transactions($selectedDepartmentId, (int) $fiscalYear['id'], $page, 50, $search, $selectedGroupId);
 
-// สาขาเป้าหมายสำหรับฟอร์มบันทึกใหม่: DEPT_STAFF = สาขาตัวเองเสมอ, ADMIN = ต้องเลือกสาขาเจาะจงก่อน (เลือก "ทั้งหมด" บันทึกไม่ได้)
-$formDepartmentId = $user['role'] === 'DEPT_STAFF' ? (int) $user['department_id'] : $selectedDepartmentId;
+// สาขาเป้าหมายสำหรับฟอร์มบันทึกใหม่: DEPT_STAFF/DEPT_HEAD = สาขาตัวเองเสมอ, ADMIN = ต้องเลือกสาขาเจาะจงก่อน (เลือก "ทั้งหมด" บันทึกไม่ได้)
+$formDepartmentId = in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true) ? (int) $user['department_id'] : $selectedDepartmentId;
+// หัวหน้าสาขา (DEPT_HEAD) ดูรายการได้อย่างเดียว บันทึกเบิกจ่าย/รายรับเองไม่ได้ (ดู bpm_require_role ใน create-transaction.php ที่ไม่รวม DEPT_HEAD)
+$canRecordTransactions = $user['role'] !== 'DEPT_HEAD';
 $lineItems = $formDepartmentId !== null ? bpm_line_items_for_department($formDepartmentId, (int) $fiscalYear['id']) : [];
 
 $balanceMap = [];
@@ -80,7 +82,7 @@ if ($selectedGroupId === null && $formDepartmentId !== null) {
     uksort($groupRollup, static fn ($a, $b) => ($a === 'none' ? PHP_INT_MAX : $a) <=> ($b === 'none' ? PHP_INT_MAX : $b));
 }
 
-$preselectLineItemId = (int) ($_GET['li'] ?? 0);
+$preselectLineItemId = $canRecordTransactions ? (int) ($_GET['li'] ?? 0) : 0;
 
 // ค่าเริ่มต้นของช่องวันที่ต้องอยู่ในช่วงปีงบเสมอ (ไม่ใช่ "วันนี้" เฉยๆ) เพราะวันนี้อาจอยู่นอกช่วงปีงบที่กำลังดูอยู่
 // เช่น เปิดดูปีงบที่ยังไม่เริ่ม (start_date อยู่ในอนาคต) ค่า default เป็นวันนี้จะ invalid ทันทีเพราะน้อยกว่า min
@@ -132,7 +134,7 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
 ], static fn ($v) => $v !== null && $v !== ''));
 ?>
 
-  <?php if ($user['role'] !== 'DEPT_STAFF'):
+  <?php if (!in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true)):
     // ต้องส่ง dept= (ว่างๆ) แบบตั้งใจ ไม่ใช่ตัด param ทิ้งไปเฉยๆ ไม่งั้นเข้าเงื่อนไข "ไม่ได้ระบุ dept" แล้วโดนเด้งกลับไปสาขาแรกอีกที
     $allDeptParams = array_filter(['fy' => $_GET['fy'] ?? null, 'group' => $_GET['group'] ?? null], static fn ($v) => $v !== null && $v !== '');
     $allDeptParams['dept'] = ''; ?>
@@ -212,7 +214,11 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
                 <td class="num"><?= htmlspecialchars(bpm_money($d['total_budget']), ENT_QUOTES) ?></td>
                 <td class="num"><?= htmlspecialchars(bpm_money($spent), ENT_QUOTES) ?></td>
                 <td class="num" style="<?= $d['balance'] < 0 ? 'color: var(--status-danger-text);' : 'color: var(--status-success-text);' ?>"><?= htmlspecialchars(bpm_money($d['balance']), ENT_QUOTES) ?></td>
-                <td><button type="button" class="btn btn-secondary" style="padding:5px 10px; font-size:12.5px;" onclick="bpmOpenTxnModal(<?= (int) $li['id'] ?>)">เพิ่มรายการ</button></td>
+                <td>
+                  <?php if ($canRecordTransactions): ?>
+                    <button type="button" class="btn btn-secondary" style="padding:5px 10px; font-size:12.5px;" onclick="bpmOpenTxnModal(<?= (int) $li['id'] ?>)">เพิ่มรายการ</button>
+                  <?php endif; ?>
+                </td>
               </tr>
             <?php endforeach; ?>
           </tbody>
@@ -225,7 +231,7 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
       <div class="table-toolbar">
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
           <h2 style="margin:0;">รายการทั้งหมด — ปีงบ พ.ศ. <?= (int) $fiscalYear['year_be'] ?></h2>
-          <?php if ($formDepartmentId !== null && !empty($lineItems)): ?>
+          <?php if ($canRecordTransactions && $formDepartmentId !== null && !empty($lineItems)): ?>
             <button type="button" class="btn btn-primary" style="padding:6px 12px; font-size:13px;" onclick="bpmOpenTxnModal(0)"><?= bpm_icon('plus', 13) ?> เพิ่มรายการ</button>
           <?php endif; ?>
         </div>

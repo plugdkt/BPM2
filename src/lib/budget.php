@@ -466,7 +466,7 @@ function bpm_money(float $amount): string
  */
 function bpm_resolve_department_filter(array $user): ?int
 {
-    if ($user['role'] === 'DEPT_STAFF') {
+    if (in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true)) {
         return (int) $user['department_id'];
     }
 
@@ -502,6 +502,7 @@ function bpm_role_label(?string $role): string
         'ADMIN'             => 'ผู้ดูแลระบบ',
         'DEPT_STAFF'        => 'เจ้าหน้าที่สาขา',
         'EXECUTIVE_VIEWER'  => 'ผู้บริหาร',
+        'DEPT_HEAD'         => 'หัวหน้าสาขา',
         default             => 'ไม่มีสิทธิ์',
     };
 }

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../src/bootstrap.php';
 
-$user = bpm_require_role('ADMIN', 'DEPT_STAFF');
+$user = bpm_require_role('ADMIN', 'DEPT_STAFF', 'DEPT_HEAD');
 
 // เข้าหน้านี้ครั้งแรกโดยไม่ระบุ ?dept= เลย (ไม่ใช่เลือก "ทั้งหมด" ตั้งใจ) — เด้งไปสาขาแรกให้อัตโนมัติ
 // (dept="" ว่างๆ ยังคงหมายถึง "ทั้งหมด" ตามเดิม — ดู tab "ทั้งหมด" ด้านล่าง)
-if ($user['role'] !== 'DEPT_STAFF' && !isset($_GET['dept'])) {
+if (!in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true) && !isset($_GET['dept'])) {
     $firstDeptId = bpm_db()->query('SELECT id FROM departments WHERE is_active = 1 ORDER BY name LIMIT 1')->fetchColumn();
     if ($firstDeptId) {
         header('Location: ?' . http_build_query(array_merge($_GET, ['dept' => $firstDeptId])));
@@ -36,7 +36,7 @@ $pendingCount = count(array_filter($transfers, static fn ($t) => $t['status'] ==
 // เก็บ id ของคำขอที่ "ถูกโอนกลับไปแล้ว" ไว้ ใช้ซ่อนปุ่มโอนกลับซ้ำ + โชว์ป้ายกำกับ
 $reversedIds = array_filter(array_column($transfers, 'reversed_of_transfer_id'));
 
-$formDepartmentId = $user['role'] === 'DEPT_STAFF' ? (int) $user['department_id'] : $selectedDepartmentId;
+$formDepartmentId = in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true) ? (int) $user['department_id'] : $selectedDepartmentId;
 $lineItems = $formDepartmentId !== null ? bpm_line_items_for_department($formDepartmentId, (int) $fiscalYear['id']) : [];
 
 $balanceMap = [];
@@ -72,7 +72,7 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
 ], static fn ($v) => $v !== null && $v !== ''));
 ?>
 
-  <?php if ($user['role'] !== 'DEPT_STAFF'):
+  <?php if (!in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true)):
     // ต้องส่ง dept= (ว่างๆ) แบบตั้งใจ ไม่ใช่ตัด param ทิ้งไปเฉยๆ ไม่งั้นเข้าเงื่อนไข "ไม่ได้ระบุ dept" แล้วโดนเด้งกลับไปสาขาแรกอีกที
     $allDeptParams = array_filter(['fy' => $_GET['fy'] ?? null, 'group' => $_GET['group'] ?? null], static fn ($v) => $v !== null && $v !== '');
     $allDeptParams['dept'] = ''; ?>

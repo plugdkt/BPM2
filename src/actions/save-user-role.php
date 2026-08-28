@@ -24,20 +24,20 @@ $role = $role === '' ? null : $role;
 $departmentId = (int) ($_POST['department_id'] ?? 0) ?: null;
 $isActive = isset($_POST['is_active']) ? 1 : 0;
 
-if ($role !== null && !in_array($role, ['ADMIN', 'DEPT_STAFF', 'EXECUTIVE_VIEWER'], true)) {
+if ($role !== null && !in_array($role, ['ADMIN', 'DEPT_STAFF', 'EXECUTIVE_VIEWER', 'DEPT_HEAD'], true)) {
     bpm_flash_set('danger', 'สิทธิ์ไม่ถูกต้อง');
     header('Location: ' . bpm_url(''));
     exit;
 }
 
-if ($role === 'DEPT_STAFF' && $departmentId === null) {
-    bpm_flash_set('danger', 'เจ้าหน้าที่สาขาต้องระบุสาขาด้วย');
+if (in_array($role, ['DEPT_STAFF', 'DEPT_HEAD'], true) && $departmentId === null) {
+    bpm_flash_set('danger', 'เจ้าหน้าที่สาขา/หัวหน้าสาขาต้องระบุสาขาด้วย');
     header('Location: ' . bpm_url(''));
     exit;
 }
 
 // ADMIN/EXECUTIVE_VIEWER ไม่ควรผูกสาขา — เคลียร์ทิ้งอัตโนมัติ (ดู spec.md ข้อ 5.3)
-if ($role !== 'DEPT_STAFF') {
+if (!in_array($role, ['DEPT_STAFF', 'DEPT_HEAD'], true)) {
     $departmentId = null;
 }
 

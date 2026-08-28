@@ -34,13 +34,13 @@ $errors = [];
 if ($ssoUsername === '' || !preg_match('/^[a-zA-Z0-9._-]+$/', $ssoUsername)) {
     $errors[] = 'กรุณากรอก username บัญชี UP Account ให้ถูกต้อง (ตัวอักษร ตัวเลข จุด ขีด เท่านั้น เช่น wittaya.su)';
 }
-if ($role !== null && !in_array($role, ['ADMIN', 'DEPT_STAFF', 'EXECUTIVE_VIEWER'], true)) {
+if ($role !== null && !in_array($role, ['ADMIN', 'DEPT_STAFF', 'EXECUTIVE_VIEWER', 'DEPT_HEAD'], true)) {
     $errors[] = 'สิทธิ์ไม่ถูกต้อง';
 }
-if ($role === 'DEPT_STAFF' && $departmentId === null) {
-    $errors[] = 'เจ้าหน้าที่สาขาต้องระบุสาขาด้วย';
+if (in_array($role, ['DEPT_STAFF', 'DEPT_HEAD'], true) && $departmentId === null) {
+    $errors[] = 'เจ้าหน้าที่สาขา/หัวหน้าสาขาต้องระบุสาขาด้วย';
 }
-if ($role !== 'DEPT_STAFF') {
+if (!in_array($role, ['DEPT_STAFF', 'DEPT_HEAD'], true)) {
     $departmentId = null;
 }
 

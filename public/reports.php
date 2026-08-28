@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../src/bootstrap.php';
 
-$user = bpm_require_role('ADMIN', 'DEPT_STAFF', 'EXECUTIVE_VIEWER');
+$user = bpm_require_role('ADMIN', 'DEPT_STAFF', 'EXECUTIVE_VIEWER', 'DEPT_HEAD');
 
 $fiscalYear = bpm_resolve_fiscal_year();
 $selectedDepartmentId = bpm_resolve_department_filter($user);

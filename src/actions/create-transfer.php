@@ -6,7 +6,7 @@ require_once __DIR__ . '/../bootstrap.php';
 
 /** ยื่นคำขอโยกย้ายงบ — ดู spec.md ข้อ 5.3/6.4 */
 
-$user = bpm_require_role('ADMIN', 'DEPT_STAFF');
+$user = bpm_require_role('ADMIN', 'DEPT_STAFF', 'DEPT_HEAD');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: ' . bpm_url(''));
@@ -58,7 +58,7 @@ if (!$fromItem || !$toItem) {
         $errors[] = 'ต้องโอนย้ายภายในสาขาและปีงบเดียวกันเท่านั้น';
     }
 
-    if ($user['role'] === 'DEPT_STAFF' && (int) $fromItem['department_id'] !== (int) $user['department_id']) {
+    if (in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true) && (int) $fromItem['department_id'] !== (int) $user['department_id']) {
         $errors[] = 'ไม่มีสิทธิ์ยื่นคำขอของสาขาอื่น';
     }
 

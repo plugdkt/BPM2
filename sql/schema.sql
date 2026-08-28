@@ -51,7 +51,7 @@ CREATE TABLE users (
   email         VARCHAR(191)    NOT NULL,
   pos_name      VARCHAR(150)    NULL,             -- ตำแหน่ง จาก SSO (informational)
   div_name      VARCHAR(150)    NULL,             -- สังกัด จาก SSO (informational)
-  role          ENUM('ADMIN','DEPT_STAFF','EXECUTIVE_VIEWER') NULL, -- NULL = ยังไม่ถูกกำหนดสิทธิ์ ห้ามใช้งานฟีเจอร์ใดๆ
+  role          ENUM('ADMIN','DEPT_STAFF','EXECUTIVE_VIEWER','DEPT_HEAD') NULL, -- NULL = ยังไม่ถูกกำหนดสิทธิ์ ห้ามใช้งานฟีเจอร์ใดๆ
   department_id INT UNSIGNED    NULL,
   is_active     TINYINT(1)      NOT NULL DEFAULT 1,
   last_login_at DATETIME        NULL,

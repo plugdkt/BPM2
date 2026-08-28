@@ -15,7 +15,7 @@ require_once __DIR__ . '/icons.php';
  *   $selectedDepartmentId  ?int    สาขาที่กำลังดูอยู่ (null = ทั้งหมด) — ไม่โชว์ dropdown ถ้า role เป็น DEPT_STAFF
  */
 
-$pendingBadge = bpm_pending_transfer_count($user['role'] === 'DEPT_STAFF' ? (int) $user['department_id'] : null);
+$pendingBadge = bpm_pending_transfer_count(in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true) ? (int) $user['department_id'] : null);
 $fiscalYear ??= null;
 $selectedDepartmentId ??= null;
 
@@ -83,7 +83,7 @@ $navItems = [
       <h1><?= htmlspecialchars($pageTitle, ENT_QUOTES) ?></h1>
       <div class="topbar-right">
 
-        <?php if ($fiscalYear || $selectedDepartmentId !== null || $user['role'] !== 'DEPT_STAFF'): ?>
+        <?php if ($fiscalYear || $selectedDepartmentId !== null || !in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true)): ?>
           <form method="get" style="display:flex; gap:10px; align-items:center;">
             <?php foreach ($_GET as $k => $v): if (in_array($k, ['fy', 'dept'], true)) continue; ?>
               <input type="hidden" name="<?= htmlspecialchars($k, ENT_QUOTES) ?>" value="<?= htmlspecialchars((string) $v, ENT_QUOTES) ?>">
@@ -99,7 +99,7 @@ $navItems = [
               </select>
             <?php endif; ?>
 
-            <?php if ($user['role'] !== 'DEPT_STAFF'): ?>
+            <?php if (!in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true)): ?>
               <select name="dept" class="filter-chip" onchange="this.form.submit()" aria-label="สาขา">
                 <option value="" <?= $selectedDepartmentId === null ? 'selected' : '' ?>>สาขา: ทั้งหมด</option>
                 <?php foreach (bpm_all_departments() as $dept): ?>

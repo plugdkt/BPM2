@@ -30,10 +30,11 @@ require __DIR__ . '/../../src/partials/layout_start.php';
       </div>
       <div>
         <label class="field-label" for="new_role">สิทธิ์</label>
-        <select name="role" id="new_role" class="field" onchange="document.getElementById('new-dept-wrap').style.display = this.value === 'DEPT_STAFF' ? '' : 'none';">
+        <select name="role" id="new_role" class="field" onchange="document.getElementById('new-dept-wrap').style.display = (this.value === 'DEPT_STAFF' || this.value === 'DEPT_HEAD') ? '' : 'none';">
           <option value="">— ยังไม่กำหนด —</option>
           <option value="ADMIN">ผู้ดูแลระบบ (ADMIN)</option>
           <option value="DEPT_STAFF">เจ้าหน้าที่สาขา (DEPT_STAFF)</option>
+          <option value="DEPT_HEAD">หัวหน้าสาขา (DEPT_HEAD)</option>
           <option value="EXECUTIVE_VIEWER">ผู้บริหาร (EXECUTIVE_VIEWER)</option>
         </select>
       </div>
@@ -96,10 +97,11 @@ require __DIR__ . '/../../src/partials/layout_start.php';
                 <option value="" <?= $r['role'] === null ? 'selected' : '' ?>>— ยังไม่กำหนด —</option>
                 <option value="ADMIN" <?= $r['role'] === 'ADMIN' ? 'selected' : '' ?>>ผู้ดูแลระบบ (ADMIN)</option>
                 <option value="DEPT_STAFF" <?= $r['role'] === 'DEPT_STAFF' ? 'selected' : '' ?>>เจ้าหน้าที่สาขา (DEPT_STAFF)</option>
+                <option value="DEPT_HEAD" <?= $r['role'] === 'DEPT_HEAD' ? 'selected' : '' ?>>หัวหน้าสาขา (DEPT_HEAD)</option>
                 <option value="EXECUTIVE_VIEWER" <?= $r['role'] === 'EXECUTIVE_VIEWER' ? 'selected' : '' ?>>ผู้บริหาร (EXECUTIVE_VIEWER)</option>
               </select>
             </td>
-            <td id="<?= $deptWrapId ?>" style="<?= $r['role'] !== 'DEPT_STAFF' ? 'display:none;' : '' ?>">
+            <td id="<?= $deptWrapId ?>" style="<?= !in_array($r['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true) ? 'display:none;' : '' ?>">
               <select name="department_id" form="<?= $fid ?>" class="field">
                 <?php foreach ($departments as $d): ?>
                   <option value="<?= (int) $d['id'] ?>" <?= (int) $r['department_id'] === (int) $d['id'] ? 'selected' : '' ?>><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></option>
@@ -145,7 +147,7 @@ require __DIR__ . '/../../src/partials/layout_start.php';
   <script>
     function bpmToggleDeptSelect(userId) {
       const role = document.getElementById('role-' + userId).value;
-      document.getElementById('dept-wrap-' + userId).style.display = role === 'DEPT_STAFF' ? '' : 'none';
+      document.getElementById('dept-wrap-' + userId).style.display = (role === 'DEPT_STAFF' || role === 'DEPT_HEAD') ? '' : 'none';
     }
     function bpmConfirmSuspend(btn) {
       return confirm('ระงับสิทธิ์การใช้งานของ "' + btn.dataset.confirmName + '"?\n\nบัญชีจะเข้าระบบไม่ได้จนกว่าจะเปิดสิทธิ์กลับ (ไม่ลบข้อมูลจริง)');
