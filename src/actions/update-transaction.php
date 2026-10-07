@@ -5,7 +5,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/../bootstrap.php';
 
 /**
- * แก้ไขรายการเบิกจ่าย/รายรับที่บันทึกไปแล้ว — ให้ ADMIN หรือคนที่บันทึกรายการนั้นเองเท่านั้น
+ * แก้ไขรายการเบิกจ่ายที่บันทึกไปแล้ว — ให้ ADMIN หรือคนที่บันทึกรายการนั้นเองเท่านั้น
+ * ประเภทรายการ (รายจ่าย/รายรับ) แก้ไม่ได้ — คงตามที่บันทึกไว้เดิม (ระบบนี้ไม่มีรายรับแล้ว เหลือเฉพาะข้อมูลเก่าถ้ามี)
+ * ผู้ขอใช้: เลือกจากผู้ใช้ในระบบ — รายการเก่าที่ยังไม่มีผู้ขอใช้เว้นว่างต่อได้ แต่ถ้ามีแล้วต้องไม่ลบออก
  * line_item_id แก้ไม่ได้ (ตั้งใจ — ถ้าเลือกรายการงบผิดทั้งหมด ให้บันทึกใหม่แทนแก้ไขข้าม line item)
  * ดู spec.md ข้อ 5.2/5.3 (audit trail) และ src/actions/create-transaction.php (validation แบบเดียวกัน)
  */
@@ -53,7 +55,8 @@ if ($user['role'] !== 'ADMIN' && (int) $txn['created_by'] !== (int) $user['id'])
     exit;
 }
 
-$type        = $_POST['type'] ?? '';
+$type        = $txn['type']; // ไม่รับค่าประเภทจากฟอร์ม
+$requesterId = (int) ($_POST['requester_user_id'] ?? 0);
 $amountRaw   = str_replace(',', '', (string) ($_POST['amount'] ?? ''));
 $txnDate     = (string) ($_POST['txn_date'] ?? '');
 $description = trim((string) ($_POST['description'] ?? ''));
@@ -66,9 +69,6 @@ $travelRefDoc   = trim((string) ($_POST['travel_ref_doc'] ?? '')) ?: null;
 
 $errors = [];
 
-if (!in_array($type, ['EXPENSE', 'INCOME'], true)) {
-    $errors[] = 'กรุณาเลือกประเภทรายการ';
-}
 if (!is_numeric($amountRaw) || (float) $amountRaw <= 0) {
     $errors[] = 'จำนวนเงินต้องมากกว่า 0';
 }
@@ -80,6 +80,18 @@ if (!$txnDateObj) {
     $errors[] = 'วันที่ทำรายการไม่ถูกต้อง';
 }
 
+// ผู้ขอใช้: เลือกจากรายชื่อที่ยังเปิดใช้งาน (หรือคนเดิมของรายการนี้ แม้ถูกระงับไปแล้ว) — เว้นว่างได้เฉพาะรายการเก่าที่ยังไม่เคยมีผู้ขอใช้
+if ($requesterId > 0) {
+    $requesterStmt = $db->prepare('SELECT id FROM users WHERE id = ? AND (is_active = 1 OR id = ?)');
+    $requesterStmt->execute([$requesterId, (int) ($txn['requester_user_id'] ?? 0)]);
+    if ($requesterStmt->fetchColumn() === false) {
+        $errors[] = 'ผู้ขอใช้ที่เลือกไม่ถูกต้อง กรุณาเลือกจากรายชื่อ';
+    }
+} elseif ($txn['requester_user_id'] !== null) {
+    $errors[] = 'กรุณาเลือกผู้ขอใช้จากรายชื่อ (พิมพ์ชื่อแล้วเลือกจากที่ขึ้นมา)';
+}
+$newRequester = $requesterId > 0 ? $requesterId : null;
+
 $fyStmt = $db->prepare('SELECT * FROM fiscal_years WHERE id = ?');
 $fyStmt->execute([$txn['fiscal_year_id']]);
 $fiscalYear = $fyStmt->fetch();
@@ -87,7 +99,7 @@ $fiscalYear = $fyStmt->fetch();
 if ($fiscalYear['status'] === 'CLOSED') {
     $errors[] = 'ปีงบนี้ถูกปิดแล้ว ไม่สามารถแก้ไขรายการได้ (ดู spec.md ข้อ 6.5)';
 } elseif ($txnDateObj && ($txnDate < $fiscalYear['start_date'] || $txnDate > $fiscalYear['end_date'])) {
-    $errors[] = 'วันที่ทำรายการต้องอยู่ในช่วงปีงบ พ.ศ. ' . $fiscalYear['year_be'];
+    $errors[] = 'วันที่ทำรายการต้องอยู่ในช่วงปีงบ พ.ศ. ' . $fiscalYear['year_be'] . ' (' . bpm_thai_date($fiscalYear['start_date']) . ' – ' . bpm_thai_date($fiscalYear['end_date']) . ') — ย้อนหลังได้ถึงวันเริ่มปีงบ';
 }
 
 if ((int) $txn['requires_travel_detail'] === 1 && ($instructorName === '' || $purpose === '')) {
@@ -107,9 +119,9 @@ try {
     bpm_line_item_balance((int) $txn['line_item_id'], true);
 
     $update = $db->prepare(
-        'UPDATE transactions SET type = ?, amount = ?, description = ?, reference_no = ?, txn_date = ? WHERE id = ?'
+        'UPDATE transactions SET type = ?, amount = ?, description = ?, reference_no = ?, requester_user_id = ?, txn_date = ? WHERE id = ?'
     );
-    $update->execute([$type, (float) $amountRaw, $description, $referenceNo, $txnDate, $id]);
+    $update->execute([$type, (float) $amountRaw, $description, $referenceNo, $newRequester, $txnDate, $id]);
 
     if ((int) $txn['requires_travel_detail'] === 1) {
         $existingTravel = $db->prepare('SELECT id FROM travel_records WHERE transaction_id = ?');
@@ -130,8 +142,8 @@ try {
         'TRANSACTION_UPDATE',
         'transactions',
         $id,
-        ['type' => $txn['type'], 'amount' => (float) $txn['amount'], 'description' => $txn['description'], 'reference_no' => $txn['reference_no'], 'txn_date' => $txn['txn_date']],
-        ['type' => $type, 'amount' => (float) $amountRaw, 'description' => $description, 'reference_no' => $referenceNo, 'txn_date' => $txnDate]
+        ['type' => $txn['type'], 'amount' => (float) $txn['amount'], 'description' => $txn['description'], 'reference_no' => $txn['reference_no'], 'requester_user_id' => $txn['requester_user_id'] !== null ? (int) $txn['requester_user_id'] : null, 'txn_date' => $txn['txn_date']],
+        ['type' => $type, 'amount' => (float) $amountRaw, 'description' => $description, 'reference_no' => $referenceNo, 'requester_user_id' => $newRequester, 'txn_date' => $txnDate]
     );
 
     $db->commit();

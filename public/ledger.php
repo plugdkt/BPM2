@@ -7,7 +7,8 @@ require_once __DIR__ . '/../src/bootstrap.php';
 /**
  * สมุดรายการ (อ่านอย่างเดียว) — หน้าเจาะลึกจากรายงานสรุป/ภาพรวม เปิดให้ทุก role รวมผู้บริหาร (EXECUTIVE_VIEWER) ดูได้
  *   ?item=ID            → สมุดของรายการงบเดียว: ยอดต้นปี/โอน/เบิกจ่ายเรียงตามวันที่ พร้อมคงเหลือสะสมทีละบรรทัด
- *   ไม่มี item          → รายการเบิกจ่ายตามตัวกรองหลายมิติ (สาขา แหล่งเงิน หมวดเงิน ไตรมาส ประเภท ค้นหา) + แจกแจงยอดตามมิติที่เลือก (by=)
+ *   ไม่มี item          → รายการเบิกจ่ายตามตัวกรองหลายมิติ (สาขา แหล่งเงิน หมวดเงิน ไตรมาส ผู้ขอใช้ ค้นหา) + แจกแจงยอดตามมิติที่เลือก (by=)
+ * ระบบนี้บันทึกแต่รายจ่าย — ส่วนที่เกี่ยวกับ "รายรับ" (ตัวกรองประเภท การ์ดรายรับ คอลัมน์รายรับ) จะแสดงเฉพาะเมื่อยังมีรายรับเก่าค้างอยู่ในข้อมูล
  * DEPT_STAFF/DEPT_HEAD เห็นเฉพาะสาขาตัวเองเสมอ (ล็อกจาก bpm_resolve_department_filter / ตรวจสาขาของรายการงบ)
  * ไม่มีฟอร์มบันทึก/แก้ไขใดๆ ในหน้านี้ — ไม่กระทบยอดหรือข้อมูล
  */
@@ -169,10 +170,12 @@ if ($fiscalYear === null) {
 $sourceId = isset($_GET['source']) && (int) $_GET['source'] > 0 ? (int) $_GET['source'] : null;
 $groupId = isset($_GET['group']) && $_GET['group'] !== '' ? max(0, (int) $_GET['group']) : null;
 $quarter = isset($_GET['quarter']) && isset(BPM_QUARTER_LABELS[(int) $_GET['quarter']]) ? (int) $_GET['quarter'] : null;
-$type = in_array($_GET['type'] ?? '', ['EXPENSE', 'INCOME'], true) ? $_GET['type'] : null;
+$showIncome = bpm_income_exists();
+$type = $showIncome && in_array($_GET['type'] ?? '', ['EXPENSE', 'INCOME'], true) ? $_GET['type'] : null;
+$requesterId = isset($_GET['requester']) && $_GET['requester'] !== '' ? max(0, (int) $_GET['requester']) : null; // 0 = ยังไม่ระบุผู้ขอใช้
 $search = trim((string) ($_GET['q'] ?? ''));
 $page = max(1, (int) ($_GET['page'] ?? 1));
-$byOptions = ['dept' => 'สาขา', 'group' => 'หมวดเงิน', 'source' => 'แหล่งเงิน', 'quarter' => 'ไตรมาส', 'item' => 'รายการงบ'];
+$byOptions = ['dept' => 'สาขา', 'group' => 'หมวดเงิน', 'source' => 'แหล่งเงิน', 'quarter' => 'ไตรมาส', 'item' => 'รายการงบ', 'requester' => 'ผู้ขอใช้'];
 if ($deptScoped || $selectedDepartmentId !== null) {
     // เลือกสาขาแล้ว แจกแจงตามสาขาไม่มีความหมาย — ตัดตัวเลือกออก
     unset($byOptions['dept']);
@@ -184,7 +187,7 @@ if (!isset($byOptions[$by])) {
 
 $filters = [
     'fy' => (int) $fiscalYear['id'], 'dept' => $selectedDepartmentId, 'source' => $sourceId, 'group' => $groupId,
-    'quarter' => $quarter, 'type' => $type, 'q' => $search,
+    'quarter' => $quarter, 'type' => $type, 'requester' => $requesterId, 'q' => $search,
 ];
 $listing = bpm_ledger_list($filters, $page, 50);
 $breakdown = bpm_ledger_breakdown($filters, $by);
@@ -196,7 +199,7 @@ $sources = bpm_all_fund_sources();
 
 $cur = [
     'fy' => $_GET['fy'] ?? null, 'dept' => $deptScoped ? null : ($selectedDepartmentId ?? ($_GET['dept'] ?? null)),
-    'source' => $sourceId, 'group' => $groupId, 'quarter' => $quarter, 'type' => $type, 'q' => $search !== '' ? $search : null, 'by' => $_GET['by'] ?? null,
+    'source' => $sourceId, 'group' => $groupId, 'quarter' => $quarter, 'type' => $type, 'requester' => $requesterId, 'q' => $search !== '' ? $search : null, 'by' => $_GET['by'] ?? null,
 ];
 $qs = static fn (array $over = []): string => http_build_query(array_filter(
     array_merge($cur, ['page' => null], $over),
@@ -211,6 +214,12 @@ if ($sourceId !== null) { $activeBits[] = 'แหล่งเงิน ' . (arra
 if ($groupId !== null) { $activeBits[] = 'หมวด ' . ($groupId === 0 ? 'ไม่ระบุกลุ่ม' : ($groupNames[$groupId] ?? '')); }
 if ($quarter !== null) { $activeBits[] = BPM_QUARTER_LABELS[$quarter]['label']; }
 if ($type !== null) { $activeBits[] = $type === 'EXPENSE' ? 'เฉพาะรายจ่าย' : 'เฉพาะรายรับ'; }
+if ($requesterId !== null) {
+    $rn = $requesterId === 0 ? null : bpm_db()->prepare('SELECT name FROM users WHERE id = ?');
+    if ($rn !== null) { $rn->execute([$requesterId]); }
+    $requesterLabel = $requesterId === 0 ? '(ยังไม่ระบุ)' : ((string) $rn->fetchColumn() ?: '#' . $requesterId);
+    $activeBits[] = 'ผู้ขอใช้ ' . $requesterLabel;
+}
 if ($search !== '') { $activeBits[] = 'ค้นหา "' . $search . '"'; }
 
 $net = $listing['expense'] - $listing['income'];
@@ -262,18 +271,26 @@ require __DIR__ . '/../src/partials/layout_start.php';
         <a href="?<?= $h($qs(['quarter' => $qn])) ?>" class="filter-chip" style="<?= $chipStyle($quarter === $qn) ?>"><?= $h($meta['label']) ?> <span style="opacity:.75;">(<?= $h($meta['months']) ?>)</span></a>
       <?php endforeach; ?>
     </div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto; align-items:center;">
-      <span class="text-muted small">ประเภท:</span>
-      <a href="?<?= $h($qs(['type' => null])) ?>" class="filter-chip" style="<?= $chipStyle($type === null) ?>">ทั้งหมด</a>
-      <a href="?<?= $h($qs(['type' => 'EXPENSE'])) ?>" class="filter-chip" style="<?= $chipStyle($type === 'EXPENSE') ?>">รายจ่าย</a>
-      <a href="?<?= $h($qs(['type' => 'INCOME'])) ?>" class="filter-chip" style="<?= $chipStyle($type === 'INCOME') ?>">รายรับ</a>
-    </div>
+    <?php if ($showIncome): ?>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto; align-items:center;">
+        <span class="text-muted small">ประเภท:</span>
+        <a href="?<?= $h($qs(['type' => null])) ?>" class="filter-chip" style="<?= $chipStyle($type === null) ?>">ทั้งหมด</a>
+        <a href="?<?= $h($qs(['type' => 'EXPENSE'])) ?>" class="filter-chip" style="<?= $chipStyle($type === 'EXPENSE') ?>">รายจ่าย</a>
+        <a href="?<?= $h($qs(['type' => 'INCOME'])) ?>" class="filter-chip" style="<?= $chipStyle($type === 'INCOME') ?>">รายรับ</a>
+      </div>
+    <?php endif; ?>
+    <?php if ($requesterId !== null): ?>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span class="text-muted small">ผู้ขอใช้:</span>
+        <a href="?<?= $h($qs(['requester' => null])) ?>" class="filter-chip" style="background:var(--accent); color:#fff;"><?= $h($requesterLabel) ?> ✕</a>
+      </div>
+    <?php endif; ?>
   </div>
 
   <div class="kpi-row">
     <div class="kpi-card"><div class="label">รายจ่าย</div><div class="value"><?= $money($listing['expense']) ?></div></div>
-    <div class="kpi-card"><div class="label">รายรับ (คืนงบ)</div><div class="value"><?= $money($listing['income']) ?></div></div>
-    <div class="kpi-card highlight"><div class="label">เบิกจ่ายสุทธิ</div><div class="value"><?= $money($net) ?></div></div>
+    <?php if ($showIncome): ?><div class="kpi-card"><div class="label">รายรับ (คืนงบ)</div><div class="value"><?= $money($listing['income']) ?></div></div><?php endif; ?>
+    <div class="kpi-card highlight"><div class="label"><?= $showIncome ? 'เบิกจ่ายสุทธิ' : 'รวมเบิกจ่าย' ?></div><div class="value"><?= $money($net) ?></div></div>
     <div class="kpi-card"><div class="label">จำนวนรายการ</div><div class="value"><?= number_format($listing['total']) ?></div><div class="sub">ตามตัวกรองที่เลือก</div></div>
   </div>
 
@@ -295,8 +312,8 @@ require __DIR__ . '/../src/partials/layout_start.php';
               <th><?= $h($byOptions[$by]) ?></th>
               <th class="num">จำนวนรายการ</th>
               <th class="num">รายจ่าย</th>
-              <th class="num">รายรับ</th>
-              <th class="num">เบิกจ่ายสุทธิ</th>
+              <?php if ($showIncome): ?><th class="num">รายรับ</th><?php endif; ?>
+              <th class="num"><?= $showIncome ? 'เบิกจ่ายสุทธิ' : 'รวมเบิกจ่าย' ?></th>
               <th style="width:22%;"></th>
             </tr>
           </thead>
@@ -309,7 +326,7 @@ require __DIR__ . '/../src/partials/layout_start.php';
                 <td><a href="<?= $h($href) ?>"><?= $h($r['label']) ?></a></td>
                 <td class="num"><?= number_format($r['count']) ?></td>
                 <td class="num"><?= $money($r['expense']) ?></td>
-                <td class="num"><?= $money($r['income']) ?></td>
+                <?php if ($showIncome): ?><td class="num"><?= $money($r['income']) ?></td><?php endif; ?>
                 <td class="num" style="font-weight:600;"><?= $money($r['net']) ?></td>
                 <td><div class="kpi-progress"><span style="width:<?= round(min(100, max(0, abs($r['net']) / $maxNet * 100))) ?>%;"></span></div></td>
               </tr>
@@ -329,7 +346,7 @@ require __DIR__ . '/../src/partials/layout_start.php';
           <input type="hidden" name="<?= $h($k) ?>" value="<?= $h($v) ?>">
         <?php endforeach; ?>
         <?= bpm_icon('search', 14) ?>
-        <input type="text" name="q" placeholder="ค้นหารายการ / เลขที่อ้างอิง..." value="<?= $h($search) ?>">
+        <input type="text" name="q" placeholder="ค้นหารายการ / ผู้ขอใช้ / เลขที่อ้างอิง..." value="<?= $h($search) ?>">
       </form>
     </div>
     <?php if (empty($listing['rows'])): ?>
@@ -342,8 +359,9 @@ require __DIR__ . '/../src/partials/layout_start.php';
               <th class="center">วันที่</th>
               <?php if ($selectedDepartmentId === null): ?><th>สาขา</th><?php endif; ?>
               <th>รายการ</th>
+              <th>ผู้ขอใช้</th>
               <th>เลขที่อ้างอิง</th>
-              <th class="center">ประเภท</th>
+              <?php if ($showIncome): ?><th class="center">ประเภท</th><?php endif; ?>
               <th class="num">จำนวนเงิน</th>
             </tr>
           </thead>
@@ -353,8 +371,9 @@ require __DIR__ . '/../src/partials/layout_start.php';
                 <td class="center"><?= $h(bpm_thai_date($t['txn_date'])) ?></td>
                 <?php if ($selectedDepartmentId === null): ?><td><?= $h($t['department_name']) ?></td><?php endif; ?>
                 <td><a href="<?= $h(bpm_url('ledger.php') . '?item=' . (int) $t['li_id']) ?>"><?= $h($t['line_item_name']) ?></a> — <?= $h($t['description']) ?></td>
+                <td><?php if ($t['requester_name'] !== null): ?><a href="?<?= $h($qs(['requester' => (int) $t['requester_user_id']])) ?>" title="ดูรายการทั้งหมดของผู้ขอใช้คนนี้"><?= $h($t['requester_name']) ?></a><?php else: ?><span class="text-muted">—</span><?php endif; ?></td>
                 <td class="text-muted"><?= $h($t['reference_no'] ?? '-') ?></td>
-                <td class="center"><span class="pill <?= $t['type'] === 'EXPENSE' ? 'pill-neutral' : 'pill-success' ?>"><?= $t['type'] === 'EXPENSE' ? 'รายจ่าย' : 'รายรับ' ?></span></td>
+                <?php if ($showIncome): ?><td class="center"><span class="pill <?= $t['type'] === 'EXPENSE' ? 'pill-neutral' : 'pill-success' ?>"><?= $t['type'] === 'EXPENSE' ? 'รายจ่าย' : 'รายรับ' ?></span></td><?php endif; ?>
                 <td class="num" style="<?= $t['type'] === 'INCOME' ? 'color: var(--status-success-text);' : '' ?>"><?= $t['type'] === 'EXPENSE' ? '-' : '+' ?><?= $money((float) $t['amount']) ?></td>
               </tr>
             <?php endforeach; ?>

@@ -24,7 +24,7 @@ $search = trim((string) ($_GET['q'] ?? ''));
 $selectedGroupId = isset($_GET['group']) && $_GET['group'] !== '' ? (int) $_GET['group'] : null;
 $groups = bpm_db()->query('SELECT * FROM budget_groups WHERE is_active = 1 ORDER BY id')->fetchAll();
 
-$pageTitle = 'บันทึกเบิกจ่าย / รายรับ';
+$pageTitle = 'บันทึกเบิกจ่าย';
 $activeNav = 'transactions';
 
 if ($fiscalYear === null) {
@@ -84,6 +84,18 @@ if ($selectedGroupId === null && $formDepartmentId !== null) {
 
 $preselectLineItemId = $canRecordTransactions ? (int) ($_GET['li'] ?? 0) : 0;
 
+// ช่อง "ผู้ขอใช้" (พิมพ์ชื่อแล้วเลือกจากผู้ใช้ในระบบ) — ส่งรายชื่อลงหน้าเดียวครั้งเดียว ใช้ทั้งฟอร์มบันทึกใหม่และฟอร์มแก้ไข
+$requesterOptions = $canRecordTransactions ? bpm_requester_options() : [];
+$showTypeColumn = bpm_income_exists(); // ระบบนี้บันทึกแต่รายจ่าย — โชว์คอลัมน์ "ประเภท" เฉพาะเมื่อมีรายรับเก่าค้างอยู่ในข้อมูล
+$requesterField = static function (string $prefix, ?int $selectedId, string $selectedName): string {
+    $e = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES);
+    return '<div class="picker" data-picker>'
+        . '<input type="text" id="' . $e($prefix) . '_requester_search" class="field" placeholder="พิมพ์ชื่อผู้ขอใช้ เช่น กนก หรือ ธนพัฒน์" autocomplete="off" value="' . $e($selectedName) . '" required>'
+        . '<input type="hidden" name="requester_user_id" id="' . $e($prefix) . '_requester_id" value="' . ($selectedId ? (int) $selectedId : '') . '">'
+        . '<ul class="picker-list" role="listbox" hidden></ul>'
+        . '</div>';
+};
+
 // ค่าเริ่มต้นของช่องวันที่ต้องอยู่ในช่วงปีงบเสมอ (ไม่ใช่ "วันนี้" เฉยๆ) เพราะวันนี้อาจอยู่นอกช่วงปีงบที่กำลังดูอยู่
 // เช่น เปิดดูปีงบที่ยังไม่เริ่ม (start_date อยู่ในอนาคต) ค่า default เป็นวันนี้จะ invalid ทันทีเพราะน้อยกว่า min
 $todayStr = (new DateTimeImmutable())->format('Y-m-d');
@@ -96,10 +108,11 @@ $editingFiscalYear = null;
 $editId = (int) ($_GET['edit'] ?? 0);
 if ($editId > 0) {
     $stmt = bpm_db()->prepare(
-        'SELECT t.*, li.name AS line_item_name, li.requires_travel_detail, d.name AS department_name
+        'SELECT t.*, li.name AS line_item_name, li.requires_travel_detail, d.name AS department_name, ru.name AS requester_name
          FROM transactions t
          JOIN budget_line_items li ON li.id = t.line_item_id
          JOIN departments d ON d.id = li.department_id
+         LEFT JOIN users ru ON ru.id = t.requester_user_id
          WHERE t.id = ?'
     );
     $stmt->execute([$editId]);
@@ -230,7 +243,7 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
   <div class="card main-panel">
       <div class="table-toolbar">
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-          <h2 style="margin:0;">รายการทั้งหมด — ปีงบ พ.ศ. <?= (int) $fiscalYear['year_be'] ?></h2>
+          <h2 style="margin:0;">รายการเบิกจ่าย — ปีงบ พ.ศ. <?= (int) $fiscalYear['year_be'] ?></h2>
           <?php if ($canRecordTransactions && $formDepartmentId !== null && !empty($lineItems)): ?>
             <button type="button" class="btn btn-primary" style="padding:6px 12px; font-size:13px;" onclick="bpmOpenTxnModal(0)"><?= bpm_icon('plus', 13) ?> เพิ่มรายการ</button>
           <?php endif; ?>
@@ -240,7 +253,7 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
             <input type="hidden" name="<?= $k ?>" value="<?= htmlspecialchars((string) $v, ENT_QUOTES) ?>">
           <?php endif; endforeach; ?>
           <?= bpm_icon('search', 14) ?>
-          <input type="text" name="q" placeholder="ค้นหารายการ..." value="<?= htmlspecialchars($search, ENT_QUOTES) ?>">
+          <input type="text" name="q" placeholder="ค้นหารายการ / ผู้ขอใช้..." value="<?= htmlspecialchars($search, ENT_QUOTES) ?>">
         </form>
       </div>
 
@@ -262,8 +275,9 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
               <th class="center">วันที่</th>
               <?php if ($selectedDepartmentId === null): ?><th>สาขา</th><?php endif; ?>
               <th>รายการ</th>
+              <th>ผู้ขอใช้</th>
               <th>เลขที่อ้างอิง</th>
-              <th class="center">ประเภท</th>
+              <?php if ($showTypeColumn): ?><th class="center">ประเภท</th><?php endif; ?>
               <th class="num">จำนวนเงิน</th>
               <th style="width:80px;"></th>
             </tr>
@@ -275,8 +289,9 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
                 <td class="center"><?= htmlspecialchars(bpm_thai_date($t['txn_date']), ENT_QUOTES) ?></td>
                 <?php if ($selectedDepartmentId === null): ?><td><?= htmlspecialchars($t['department_name'], ENT_QUOTES) ?></td><?php endif; ?>
                 <td><?= htmlspecialchars($t['line_item_name'], ENT_QUOTES) ?> — <?= htmlspecialchars($t['description'], ENT_QUOTES) ?></td>
+                <td><?= $t['requester_name'] !== null ? htmlspecialchars($t['requester_name'], ENT_QUOTES) : '<span class="text-muted">—</span>' ?></td>
                 <td class="text-muted"><?= htmlspecialchars($t['reference_no'] ?? '-', ENT_QUOTES) ?></td>
-                <td class="center"><span class="pill <?= $t['type'] === 'EXPENSE' ? 'pill-neutral' : 'pill-success' ?>"><?= $t['type'] === 'EXPENSE' ? 'รายจ่าย' : 'รายรับ' ?></span></td>
+                <?php if ($showTypeColumn): ?><td class="center"><span class="pill <?= $t['type'] === 'EXPENSE' ? 'pill-neutral' : 'pill-success' ?>"><?= $t['type'] === 'EXPENSE' ? 'รายจ่าย' : 'รายรับ' ?></span></td><?php endif; ?>
                 <td class="num" style="<?= $t['type'] === 'INCOME' ? 'color: var(--status-success-text);' : '' ?>">
                   <?= $t['type'] === 'EXPENSE' ? '-' : '+' ?><?= htmlspecialchars(bpm_money((float) $t['amount']), ENT_QUOTES) ?>
                 </td>
@@ -324,13 +339,9 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
           <input type="hidden" name="dept" value="<?= htmlspecialchars((string) ($_GET['dept'] ?? ''), ENT_QUOTES) ?>">
           <input type="hidden" name="group" value="<?= htmlspecialchars((string) ($_GET['group'] ?? ''), ENT_QUOTES) ?>">
 
-          <div>
-            <label class="field-label">ประเภทรายการ</label>
-            <div class="type-toggle">
-              <label><input type="radio" name="type" value="EXPENSE" <?= $editingTxn['type'] === 'EXPENSE' ? 'checked' : '' ?>> รายจ่าย</label>
-              <label><input type="radio" name="type" value="INCOME" <?= $editingTxn['type'] === 'INCOME' ? 'checked' : '' ?>> รายรับ</label>
-            </div>
-          </div>
+          <?php if ($editingTxn['type'] === 'INCOME'): ?>
+            <p class="text-muted small" style="margin:0;"><span class="pill pill-success">รายรับ</span> ข้อมูลเดิมของระบบ — ระบบนี้บันทึกเฉพาะรายจ่าย ประเภทรายการนี้แก้ไม่ได้</p>
+          <?php endif; ?>
 
           <div>
             <label class="field-label" for="edit_amount">จำนวนเงิน (บาท)</label>
@@ -341,6 +352,20 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
             <label class="field-label" for="edit_txn_date">วันที่ทำรายการ</label>
             <input type="date" name="txn_date" id="edit_txn_date" class="field" value="<?= htmlspecialchars($editingTxn['txn_date'], ENT_QUOTES) ?>"
                    min="<?= htmlspecialchars($editingFiscalYear['start_date'], ENT_QUOTES) ?>" max="<?= htmlspecialchars($editingFiscalYear['end_date'], ENT_QUOTES) ?>" required>
+            <div class="text-muted small" style="margin-top:4px;">ย้อนหลังได้ถึง <?= htmlspecialchars(bpm_thai_date($editingFiscalYear['start_date']), ENT_QUOTES) ?> (วันเริ่มปีงบ)</div>
+          </div>
+
+          <div>
+            <label class="field-label" for="edit_requester_search">ผู้ขอใช้<?= $editingTxn['requester_user_id'] === null ? ' <span class="text-muted small">(รายการเก่า — เว้นว่างไว้ได้)</span>' : '' ?></label>
+            <?php if ($editingTxn['requester_user_id'] === null): ?>
+              <div class="picker" data-picker data-optional="1">
+                <input type="text" id="edit_requester_search" class="field" placeholder="พิมพ์ชื่อผู้ขอใช้ เช่น กนก หรือ ธนพัฒน์" autocomplete="off" value="">
+                <input type="hidden" name="requester_user_id" id="edit_requester_id" value="">
+                <ul class="picker-list" role="listbox" hidden></ul>
+              </div>
+            <?php else: ?>
+              <?= $requesterField('edit', (int) $editingTxn['requester_user_id'], (string) $editingTxn['requester_name']) ?>
+            <?php endif; ?>
           </div>
 
           <div>
@@ -405,14 +430,6 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
           </div>
 
           <div>
-            <label class="field-label">ประเภทรายการ</label>
-            <div class="type-toggle">
-              <label><input type="radio" name="type" value="EXPENSE" checked onchange="bpmUpdateBalancePreview()"> รายจ่าย</label>
-              <label><input type="radio" name="type" value="INCOME" onchange="bpmUpdateBalancePreview()"> รายรับ</label>
-            </div>
-          </div>
-
-          <div>
             <label class="field-label" for="amount">จำนวนเงิน (บาท)</label>
             <input type="text" inputmode="decimal" name="amount" id="amount" class="field num" placeholder="0.00" oninput="bpmUpdateBalancePreview()" required>
           </div>
@@ -421,6 +438,12 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
             <label class="field-label" for="txn_date">วันที่ทำรายการ</label>
             <input type="date" name="txn_date" id="txn_date" class="field" value="<?= htmlspecialchars($defaultTxnDate, ENT_QUOTES) ?>"
                    min="<?= htmlspecialchars($fiscalYear['start_date'], ENT_QUOTES) ?>" max="<?= htmlspecialchars($fiscalYear['end_date'], ENT_QUOTES) ?>" required>
+            <div class="text-muted small" style="margin-top:4px;">ลงย้อนหลังได้ถึง <?= htmlspecialchars(bpm_thai_date($fiscalYear['start_date']), ENT_QUOTES) ?> (วันเริ่มปีงบ)</div>
+          </div>
+
+          <div>
+            <label class="field-label" for="new_requester_search">ผู้ขอใช้</label>
+            <?= $requesterField('new', null, '') ?>
           </div>
 
           <div>
@@ -478,11 +501,10 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
             const select = document.getElementById('line_item_id');
             const opt = select.options[select.selectedIndex];
             const id = select.value;
-            const type = document.querySelector('input[name="type"]:checked').value;
             const amount = parseFloat((document.getElementById('amount').value || '0').replace(/,/g, '')) || 0;
 
             const before = bpmLineItemBalances[id] ?? 0;
-            const after = type === 'EXPENSE' ? before - amount : before + amount;
+            const after = before - amount; // บันทึกได้เฉพาะรายจ่าย
 
             document.getElementById('balance-before').textContent = bpmFormatMoney(before);
             document.getElementById('balance-after').textContent = bpmFormatMoney(after);
@@ -498,6 +520,96 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
       <?php endif; ?>
     </div>
   </dialog>
+
+
+  <script>
+    // ช่อง "ผู้ขอใช้": พิมพ์ชื่อไม่กี่ตัว (หรือบางส่วนของชื่อ/สังกัด/username หลายคำก็ได้) แล้วเลือกจากรายชื่อผู้ใช้ในระบบ — ไม่ยิง request เพิ่ม
+    const bpmRequesterUsers = <?= json_encode($requesterOptions, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    const bpmTitleRe = /^(รองศาสตราจารย์ ?ดร\.|ศ\.ดร\.|รศ\.ดร\.|ผศ\.ดร\.|ดร\.|ผศ\.|รศ\.|ศ\.|นางสาว|นาง|นาย|อาจารย์)\s*/;
+
+    function bpmInitPicker(root) {
+      const input = root.querySelector('input[type="text"]');
+      const hidden = root.querySelector('input[type="hidden"]');
+      const list = root.querySelector('.picker-list');
+      let items = [];
+      let active = -1;
+
+      const optional = root.dataset.optional === '1'; // รายการเก่าที่ยังไม่เคยมีผู้ขอใช้ เว้นว่างได้ (แต่ถ้าพิมพ์แล้วต้องเลือกจากรายการ)
+      function validity() {
+        const ok = hidden.value || (optional && input.value.trim() === '');
+        input.setCustomValidity(ok ? '' : 'กรุณาเลือกชื่อผู้ขอใช้จากรายการที่ขึ้นมา');
+      }
+      function close() { list.hidden = true; active = -1; }
+      function choose(u) {
+        input.value = u.name;
+        hidden.value = String(u.id);
+        validity();
+        close();
+      }
+      function render() {
+        list.replaceChildren();
+        if (items.length === 0) {
+          const li = document.createElement('li');
+          li.className = 'picker-empty';
+          li.textContent = 'ไม่พบชื่อที่ตรงกัน';
+          list.appendChild(li);
+        }
+        items.forEach(function (u, i) {
+          const li = document.createElement('li');
+          li.className = 'picker-item' + (i === active ? ' active' : '');
+          li.setAttribute('role', 'option');
+          const n = document.createElement('div');
+          n.textContent = u.name;
+          li.appendChild(n);
+          const sub = [u.pos, u.unit].filter(Boolean).join(' · ');
+          if (sub) {
+            const s = document.createElement('div');
+            s.className = 'picker-sub';
+            s.textContent = sub;
+            li.appendChild(s);
+          }
+          li.addEventListener('mousedown', function (e) { e.preventDefault(); choose(u); });
+          list.appendChild(li);
+        });
+        list.hidden = false;
+      }
+      function search() {
+        const tokens = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+        if (tokens.length === 0) { items = []; close(); return; }
+        const scored = [];
+        bpmRequesterUsers.forEach(function (u) {
+          const hay = (u.name + ' ' + u.unit + ' ' + u.pos + ' ' + u.u).toLowerCase();
+          if (!tokens.every(function (t) { return hay.indexOf(t) !== -1; })) return;
+          const bare = u.name.replace(bpmTitleRe, '').toLowerCase();
+          scored.push({ u: u, score: bare.indexOf(tokens[0]) === 0 ? 0 : 1 });
+        });
+        scored.sort(function (a, b) { return a.score - b.score || a.u.name.localeCompare(b.u.name, 'th'); });
+        items = scored.slice(0, 8).map(function (x) { return x.u; });
+        active = items.length ? 0 : -1;
+        render();
+      }
+
+      input.addEventListener('input', function () { hidden.value = ''; validity(); search(); });
+      input.addEventListener('focus', function () { if (!hidden.value && input.value.trim()) search(); });
+      input.addEventListener('blur', function () {
+        // พิมพ์ชื่อเต็มตรงเป๊ะแล้วออกจากช่อง (ไม่ได้คลิกเลือก) — เลือกให้เองถ้ามีคนชื่อนี้คนเดียว
+        if (!hidden.value && input.value.trim() !== '') {
+          const exact = bpmRequesterUsers.filter(function (u) { return u.name.toLowerCase() === input.value.trim().toLowerCase(); });
+          if (exact.length === 1) { choose(exact[0]); return; }
+        }
+        setTimeout(close, 120);
+      });
+      input.addEventListener('keydown', function (e) {
+        if (list.hidden) { return; }
+        if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, items.length - 1); render(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); render(); }
+        else if (e.key === 'Enter') { if (active >= 0 && items[active]) { e.preventDefault(); choose(items[active]); } }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+      });
+      validity();
+    }
+    document.querySelectorAll('[data-picker]').forEach(bpmInitPicker);
+  </script>
 
   <script>
     function bpmConfirmDeleteTxn(btn) {

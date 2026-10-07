@@ -156,11 +156,14 @@ CREATE TABLE transactions (
   amount        DECIMAL(14,2) NOT NULL,
   description   VARCHAR(500) NOT NULL,
   reference_no  VARCHAR(100) NULL,
+  requester_user_id INT UNSIGNED NULL, -- ผู้ขอใช้ (เลือกจากรายชื่อผู้ใช้ในระบบ) — NULL = รายการเก่าก่อนมีช่องนี้ (ดู scripts/add-transaction-requester.php)
   txn_date      DATE NOT NULL,
   created_by    INT UNSIGNED NOT NULL,
   created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_txn_requester (requester_user_id),
   CONSTRAINT fk_txn_lineitem  FOREIGN KEY (line_item_id) REFERENCES budget_line_items(id),
-  CONSTRAINT fk_txn_createdby FOREIGN KEY (created_by)   REFERENCES users(id)
+  CONSTRAINT fk_txn_createdby FOREIGN KEY (created_by)   REFERENCES users(id),
+  CONSTRAINT fk_txn_requester FOREIGN KEY (requester_user_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------------------------

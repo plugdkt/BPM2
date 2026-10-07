@@ -408,9 +408,9 @@ function bpm_list_transactions(?int $departmentId, int $fiscalYearId, int $page 
 
     $searchFilter = '';
     if ($search !== '') {
-        $searchFilter = ' AND (t.description LIKE ? OR li.name LIKE ? OR t.reference_no LIKE ?)';
+        $searchFilter = ' AND (t.description LIKE ? OR li.name LIKE ? OR t.reference_no LIKE ? OR t.requester_user_id IN (SELECT id FROM users WHERE name LIKE ?))';
         $like = '%' . $search . '%';
-        array_push($params, $like, $like, $like);
+        array_push($params, $like, $like, $like, $like);
     }
 
     $countStmt = $db->prepare(
@@ -422,11 +422,12 @@ function bpm_list_transactions(?int $departmentId, int $fiscalYearId, int $page 
 
     $offset = ($page - 1) * $perPage;
     $rowsStmt = $db->prepare(
-        "SELECT t.*, " . bpm_li_label_sql() . " AS line_item_name, li.department_id, li.requires_travel_detail, d.name AS department_name
+        "SELECT t.*, " . bpm_li_label_sql() . " AS line_item_name, li.department_id, li.requires_travel_detail, d.name AS department_name, ru.name AS requester_name
          FROM transactions t
          JOIN budget_line_items li ON li.id = t.line_item_id
          JOIN fund_sources fs ON fs.id = li.fund_source_id
          JOIN departments d ON d.id = li.department_id
+         LEFT JOIN users ru ON ru.id = t.requester_user_id
          WHERE li.fiscal_year_id = ?{$deptFilter}{$groupFilter}{$searchFilter}
          ORDER BY t.txn_date DESC, t.id DESC
          LIMIT {$perPage} OFFSET {$offset}"
@@ -766,7 +767,8 @@ const BPM_QUARTER_MONTHS = [1 => [10, 11, 12], 2 => [1, 2, 3], 3 => [4, 5, 6], 4
 
 /**
  * สร้างเงื่อนไข WHERE สำหรับรายการเบิกจ่าย (alias: t = transactions, li = budget_line_items)
- * $f: fy (จำเป็น), dept, source, group (null = ทุกกลุ่ม, 0 = ยังไม่ระบุกลุ่ม), quarter (1-4), type (EXPENSE|INCOME), item, q (ค้นหา)
+ * $f: fy (จำเป็น), dept, source, group (null = ทุกกลุ่ม, 0 = ยังไม่ระบุกลุ่ม), quarter (1-4), type (EXPENSE|INCOME), item,
+ *     requester (null = ทุกคน, 0 = ยังไม่ระบุผู้ขอใช้, บวก = ผู้ขอใช้คนนั้น), q (ค้นหา)
  * ค่าที่ไม่ใช่ตัวเลข/ไม่อยู่ในช่วงที่ยอมรับจะถูกมองว่า "ไม่กรอง" — bind ทุกค่าด้วย placeholder
  */
 function bpm_ledger_where(array $f, array &$params): string
@@ -801,10 +803,18 @@ function bpm_ledger_where(array $f, array &$params): string
         $sql .= ' AND li.id = ?';
         $params[] = (int) $f['item'];
     }
+    if (isset($f['requester']) && $f['requester'] !== null) {
+        if ((int) $f['requester'] === 0) {
+            $sql .= ' AND t.requester_user_id IS NULL';
+        } else {
+            $sql .= ' AND t.requester_user_id = ?';
+            $params[] = (int) $f['requester'];
+        }
+    }
     if (isset($f['q']) && $f['q'] !== '') {
-        $sql .= ' AND (t.description LIKE ? OR li.name LIKE ? OR t.reference_no LIKE ?)';
+        $sql .= ' AND (t.description LIKE ? OR li.name LIKE ? OR t.reference_no LIKE ? OR t.requester_user_id IN (SELECT id FROM users WHERE name LIKE ?))';
         $like = '%' . $f['q'] . '%';
-        array_push($params, $like, $like, $like);
+        array_push($params, $like, $like, $like, $like);
     }
 
     return $sql;
@@ -834,11 +844,12 @@ function bpm_ledger_list(array $f, int $page = 1, int $perPage = 50): array
 
     $offset = ($page - 1) * $perPage;
     $rows = $db->prepare(
-        "SELECT t.*, li.id AS li_id, " . bpm_li_label_sql() . " AS line_item_name, d.name AS department_name
+        "SELECT t.*, li.id AS li_id, " . bpm_li_label_sql() . " AS line_item_name, d.name AS department_name, ru.name AS requester_name
          FROM transactions t
          JOIN budget_line_items li ON li.id = t.line_item_id
          JOIN fund_sources fs ON fs.id = li.fund_source_id
-         JOIN departments d ON d.id = li.department_id{$where}
+         JOIN departments d ON d.id = li.department_id
+         LEFT JOIN users ru ON ru.id = t.requester_user_id{$where}
          ORDER BY t.txn_date DESC, t.id DESC
          LIMIT {$perPage} OFFSET {$offset}"
     );
@@ -852,7 +863,7 @@ function bpm_ledger_list(array $f, int $page = 1, int $perPage = 50): array
 }
 
 /**
- * แจกแจงยอดเบิกจ่ายของชุดที่กรองตามมิติหนึ่ง: dept | group | source | quarter | item
+ * แจกแจงยอดเบิกจ่ายของชุดที่กรองตามมิติหนึ่ง: dept | group | source | quarter | item | requester (key 0 = ยังไม่ระบุผู้ขอใช้)
  * @return list<array{key: int|string, label: string, expense: float, income: float, net: float, count: int}>
  *   key = ค่าที่ใช้กรองต่อ (group: 0 = ยังไม่ระบุกลุ่ม) — เรียงตามยอดสุทธิมาก→น้อย (quarter เรียงตามไตรมาส)
  */
@@ -868,6 +879,7 @@ function bpm_ledger_breakdown(array $f, string $by): array
         'source'  => ['li.fund_source_id', 'fs.name'],
         'quarter' => ['CASE WHEN MONTH(t.txn_date) >= 10 THEN 1 WHEN MONTH(t.txn_date) <= 3 THEN 2 WHEN MONTH(t.txn_date) <= 6 THEN 3 ELSE 4 END', "''"],
         'item'    => ['li.id', bpm_li_label_sql()],
+        'requester' => ['COALESCE(t.requester_user_id, 0)', "COALESCE(ru.name, '(ยังไม่ระบุผู้ขอใช้)')"],
     ];
     if (!isset($dims[$by])) {
         return [];
@@ -883,7 +895,8 @@ function bpm_ledger_breakdown(array $f, string $by): array
          JOIN budget_line_items li ON li.id = t.line_item_id
          JOIN fund_sources fs ON fs.id = li.fund_source_id
          JOIN departments d ON d.id = li.department_id
-         LEFT JOIN budget_groups g ON g.id = li.group_id{$where}
+         LEFT JOIN budget_groups g ON g.id = li.group_id
+         LEFT JOIN users ru ON ru.id = t.requester_user_id{$where}
          GROUP BY k, label"
     );
     $stmt->execute($params);
@@ -954,12 +967,12 @@ function bpm_line_item_ledger(int $lineItemId): ?array
         ];
     }
 
-    $tx = $db->prepare('SELECT * FROM transactions WHERE line_item_id = ?');
+    $tx = $db->prepare('SELECT t.*, ru.name AS requester_name FROM transactions t LEFT JOIN users ru ON ru.id = t.requester_user_id WHERE t.line_item_id = ?');
     $tx->execute([$lineItemId]);
     foreach ($tx->fetchAll() as $t) {
         $events[] = [
             'date' => (string) $t['txn_date'], 'order' => 2, 'id' => (int) $t['id'], 'kind' => 'TXN', 'label' => (string) $t['description'],
-            'ref' => $t['reference_no'], 'note' => null, 'delta' => $t['type'] === 'EXPENSE' ? -(float) $t['amount'] : (float) $t['amount'], 'type' => $t['type'],
+            'ref' => $t['reference_no'], 'note' => $t['requester_name'] !== null ? 'ผู้ขอใช้: ' . $t['requester_name'] : null, 'delta' => $t['type'] === 'EXPENSE' ? -(float) $t['amount'] : (float) $t['amount'], 'type' => $t['type'],
         ];
     }
 
@@ -991,4 +1004,29 @@ function bpm_line_item_ledger(int $lineItemId): ?array
         'item' => $item, 'balance' => $bal, 'events' => $events, 'pending_transfers' => (int) $pending->fetchColumn(),
         'details' => $details, 'running_matches' => abs($running - $bal['balance']) < 0.005,
     ];
+}
+
+/**
+ * ระบบนี้บันทึกแต่รายจ่าย (ไม่มีรายรับ) — ใช้ซ่อนส่วนที่เกี่ยวกับ "รายรับ" ในหน้าสรุป ยกเว้นกรณีมีรายรับเก่าค้างอยู่ในข้อมูลจริง
+ * (ยอดคงเหลือยังนับรายรับเก่าตามเดิมเสมอ — ไม่ลบ/ไม่แก้ข้อมูลเก่า)
+ */
+function bpm_income_exists(): bool
+{
+    static $exists = null;
+    if ($exists === null) {
+        $exists = (bool) bpm_db()->query("SELECT 1 FROM transactions WHERE type = 'INCOME' LIMIT 1")->fetchColumn();
+    }
+    return $exists;
+}
+
+/**
+ * รายชื่อให้เลือกเป็น "ผู้ขอใช้" ในฟอร์มบันทึกเบิกจ่าย (พิมพ์ไม่กี่ตัวแล้วขึ้นชื่อ) — ผู้ใช้ที่ยังเปิดใช้งานทุกคนในระบบ
+ * คืนเฉพาะที่ใช้แสดง/ค้นหา: id, name, pos (ตำแหน่ง), unit (สังกัด), u (username — ใช้ค้นหาเท่านั้น ไม่แสดง)
+ */
+function bpm_requester_options(): array
+{
+    $rows = bpm_db()->query('SELECT id, name, pos_name, div_name, sso_username FROM users WHERE is_active = 1 ORDER BY name')->fetchAll();
+    return array_map(static fn (array $r): array => [
+        'id' => (int) $r['id'], 'name' => (string) $r['name'], 'pos' => (string) ($r['pos_name'] ?? ''), 'unit' => (string) ($r['div_name'] ?? ''), 'u' => (string) $r['sso_username'],
+    ], $rows);
 }

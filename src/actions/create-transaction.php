@@ -5,7 +5,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../bootstrap.php';
 
 /**
- * บันทึกรายการเบิกจ่าย/รายรับ — ดู spec.md ข้อ 5.2/5.3/6.6
+ * บันทึกรายการเบิกจ่าย (รายจ่ายอย่างเดียว — ระบบนี้ไม่มีรายรับ) — ดู spec.md ข้อ 5.2/5.3/6.6
+ * ต้องระบุ "ผู้ขอใช้" (เลือกจากผู้ใช้ในระบบ) · วันที่ย้อนหลังได้ ขอแค่อยู่ในช่วงปีงบของรายการงบนั้น
  * รับ POST เท่านั้น จาก public/transactions.php แล้ว redirect กลับเสมอ (PRG pattern)
  */
 
@@ -28,7 +29,8 @@ if (!bpm_csrf_verify($_POST['csrf_token'] ?? null)) {
 }
 
 $lineItemId  = (int) ($_POST['line_item_id'] ?? 0);
-$type        = $_POST['type'] ?? '';
+$type        = (string) ($_POST['type'] ?? 'EXPENSE'); // ฟอร์มไม่ส่ง type มาแล้ว — ถ้ามีส่งมาต้องเป็น EXPENSE เท่านั้น (กันฟอร์มเก่าที่ค้างหน้าจอบันทึกรายรับ)
+$requesterId = (int) ($_POST['requester_user_id'] ?? 0);
 $amountRaw   = str_replace(',', '', (string) ($_POST['amount'] ?? ''));
 $txnDate     = (string) ($_POST['txn_date'] ?? '');
 $description = trim((string) ($_POST['description'] ?? ''));
@@ -42,8 +44,8 @@ $travelRefDoc   = trim((string) ($_POST['travel_ref_doc'] ?? '')) ?: null;
 // --- validation พื้นฐาน (ดู spec.md ข้อ 5.3) ---
 $errors = [];
 
-if (!in_array($type, ['EXPENSE', 'INCOME'], true)) {
-    $errors[] = 'กรุณาเลือกประเภทรายการ';
+if ($type !== 'EXPENSE') {
+    $errors[] = 'ระบบนี้บันทึกได้เฉพาะรายจ่าย (ไม่มีรายรับ)';
 }
 if (!is_numeric($amountRaw) || (float) $amountRaw <= 0) {
     $errors[] = 'จำนวนเงินต้องมากกว่า 0';
@@ -57,6 +59,13 @@ if (!$txnDateObj) {
 }
 
 $db = bpm_db();
+
+// ผู้ขอใช้: ต้องเลือกจากรายชื่อผู้ใช้ที่ยังเปิดใช้งานในระบบ (ห้ามเชื่อ id จาก client เฉยๆ — เช็คกับ DB)
+$requesterStmt = $db->prepare('SELECT id FROM users WHERE id = ? AND is_active = 1');
+$requesterStmt->execute([$requesterId]);
+if ($requesterId <= 0 || $requesterStmt->fetchColumn() === false) {
+    $errors[] = 'กรุณาเลือกผู้ขอใช้จากรายชื่อ (พิมพ์ชื่อแล้วเลือกจากที่ขึ้นมา)';
+}
 
 $stmt = $db->prepare('SELECT li.*, d.name AS department_name FROM budget_line_items li JOIN departments d ON d.id = li.department_id WHERE li.id = ?');
 $stmt->execute([$lineItemId]);
@@ -77,7 +86,7 @@ if (!$lineItem) {
     if ($fiscalYear['status'] === 'CLOSED') {
         $errors[] = 'ปีงบนี้ถูกปิดแล้ว ไม่สามารถบันทึกรายการเพิ่มได้ (ดู spec.md ข้อ 6.5)';
     } elseif ($txnDateObj && ($txnDate < $fiscalYear['start_date'] || $txnDate > $fiscalYear['end_date'])) {
-        $errors[] = 'วันที่ทำรายการต้องอยู่ในช่วงปีงบ พ.ศ. ' . $fiscalYear['year_be'];
+        $errors[] = 'วันที่ทำรายการต้องอยู่ในช่วงปีงบ พ.ศ. ' . $fiscalYear['year_be'] . ' (' . bpm_thai_date($fiscalYear['start_date']) . ' – ' . bpm_thai_date($fiscalYear['end_date']) . ') — ย้อนหลังได้ถึงวันเริ่มปีงบ';
     }
 
     if ((int) $lineItem['requires_travel_detail'] === 1) {
@@ -101,15 +110,16 @@ try {
     bpm_line_item_balance($lineItemId, true);
 
     $insertTxn = $db->prepare(
-        'INSERT INTO transactions (line_item_id, type, amount, description, reference_no, txn_date, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO transactions (line_item_id, type, amount, description, reference_no, requester_user_id, txn_date, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $insertTxn->execute([
         $lineItemId,
-        $type,
+        'EXPENSE',
         (float) $amountRaw,
         $description,
         $referenceNo,
+        $requesterId,
         $txnDate,
         $user['id'],
     ]);
