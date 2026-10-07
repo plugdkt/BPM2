@@ -14,6 +14,7 @@ $fiscalYears = bpm_all_fiscal_years();
 $departmentId = (int) ($_GET['dept'] ?? ($departments[0]['id'] ?? 0));
 $fiscalYear = bpm_resolve_fiscal_year();
 $fiscalYearId = (int) ($fiscalYear['id'] ?? 0);
+$selectedDepartmentId = $departmentId ?: null; // ให้ dropdown สาขาบน topbar ตรงกับแท็บที่เลือก
 
 $groups = bpm_db()->query('SELECT * FROM budget_groups WHERE is_active = 1 ORDER BY id')->fetchAll();
 $fundSources = bpm_db()->query('SELECT * FROM fund_sources ORDER BY id')->fetchAll();
@@ -38,21 +39,15 @@ if ($departmentId && $fiscalYearId) {
 require __DIR__ . '/../../src/partials/layout_start.php';
 ?>
 
-  <div class="card">
-    <h2>เลือกสาขาและปีงบ</h2>
-    <form method="get" style="display:flex; gap:10px; flex-wrap:wrap;">
-      <select name="dept" class="filter-chip" onchange="this.form.submit()">
+  <?php if (!empty($departments)): ?>
+    <div class="card">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto;">
         <?php foreach ($departments as $d): ?>
-          <option value="<?= (int) $d['id'] ?>" <?= $departmentId === (int) $d['id'] ? 'selected' : '' ?>><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></option>
+          <a href="?<?= http_build_query(array_filter(['dept' => (int) $d['id'], 'fy' => $fiscalYearId ?: null])) ?>" class="filter-chip" style="<?= $departmentId === (int) $d['id'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></a>
         <?php endforeach; ?>
-      </select>
-      <select name="fy" class="filter-chip" onchange="this.form.submit()">
-        <?php foreach ($fiscalYears as $fy): ?>
-          <option value="<?= (int) $fy['id'] ?>" <?= $fiscalYearId === (int) $fy['id'] ? 'selected' : '' ?>>ปีงบประมาณ พ.ศ. <?= (int) $fy['year_be'] ?></option>
-        <?php endforeach; ?>
-      </select>
-    </form>
-  </div>
+      </div>
+    </div>
+  <?php endif; ?>
 
   <?php if (!$departmentId || !$fiscalYearId): ?>
     <div class="card empty-state">ยังไม่มีสาขาหรือปีงบประมาณในระบบ</div>
