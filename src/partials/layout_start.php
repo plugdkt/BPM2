@@ -32,7 +32,7 @@ $navItems = [
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= htmlspecialchars($pageTitle, ENT_QUOTES) ?> — BPM</title>
-<link rel="stylesheet" href="<?= htmlspecialchars(bpm_url('assets/css/app.css'), ENT_QUOTES) ?>">
+<link rel="stylesheet" href="<?= htmlspecialchars(bpm_url('assets/css/app.css') . '?v=' . (int) @filemtime(__DIR__ . '/../../public/assets/css/app.css'), ENT_QUOTES) ?>">
 </head>
 <body>
 <div class="app-shell">

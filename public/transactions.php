@@ -92,7 +92,8 @@ $requesterField = static function (string $prefix, ?int $selectedId, string $sel
     return '<div class="picker" data-picker>'
         . '<input type="text" id="' . $e($prefix) . '_requester_search" class="field" placeholder="พิมพ์ชื่อผู้ขอใช้ เช่น กนก หรือ ธนพัฒน์" autocomplete="off" value="' . $e($selectedName) . '" required>'
         . '<input type="hidden" name="requester_user_id" id="' . $e($prefix) . '_requester_id" value="' . ($selectedId ? (int) $selectedId : '') . '">'
-        . '<ul class="picker-list" role="listbox" hidden></ul>'
+        . '<ul class="picker-list" role="listbox" hidden style="list-style:none;margin:0;padding:6px;"></ul>'
+        . '<div class="picker-chosen" hidden></div>'
         . '</div>';
 };
 
@@ -361,7 +362,8 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
               <div class="picker" data-picker data-optional="1">
                 <input type="text" id="edit_requester_search" class="field" placeholder="พิมพ์ชื่อผู้ขอใช้ เช่น กนก หรือ ธนพัฒน์" autocomplete="off" value="">
                 <input type="hidden" name="requester_user_id" id="edit_requester_id" value="">
-                <ul class="picker-list" role="listbox" hidden></ul>
+                <ul class="picker-list" role="listbox" hidden style="list-style:none;margin:0;padding:6px;"></ul>
+                <div class="picker-chosen" hidden></div>
               </div>
             <?php else: ?>
               <?= $requesterField('edit', (int) $editingTxn['requester_user_id'], (string) $editingTxn['requester_name']) ?>
@@ -526,12 +528,44 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
     // ช่อง "ผู้ขอใช้": พิมพ์ชื่อไม่กี่ตัว (หรือบางส่วนของชื่อ/สังกัด/username หลายคำก็ได้) แล้วเลือกจากรายชื่อผู้ใช้ในระบบ — ไม่ยิง request เพิ่ม
     const bpmRequesterUsers = <?= json_encode($requesterOptions, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const bpmTitleRe = /^(รองศาสตราจารย์ ?ดร\.|ศ\.ดร\.|รศ\.ดร\.|ผศ\.ดร\.|ดร\.|ผศ\.|รศ\.|ศ\.|นางสาว|นาง|นาย|อาจารย์)\s*/;
+    const BPM_PICKER_MAX = 8;
+
+    // ตัวอักษรย่อในวงกลม: ตัวแรกของชื่อ + ตัวแรกของนามสกุล (ข้ามคำนำหน้าและสระนำ เ แ โ ใ ไ)
+    function bpmPickerInitials(name) {
+      const parts = name.replace(bpmTitleRe, '').trim().split(/\s+/).filter(Boolean);
+      const first = function (w) { return (w || '').replace(/^[เแโใไ]+/, '').charAt(0) || (w || '').charAt(0); };
+      return (first(parts[0]) + first(parts[1])).toUpperCase() || '?';
+    }
+
+    // ไฮไลต์ส่วนที่ตรงกับคำค้น (ทุกคำ) ในชื่อ
+    function bpmHighlight(text, tokens) {
+      const low = text.toLowerCase();
+      const mask = new Array(text.length).fill(false);
+      tokens.forEach(function (t) {
+        let i = low.indexOf(t);
+        while (i !== -1) { for (let k = i; k < i + t.length; k++) mask[k] = true; i = low.indexOf(t, i + t.length); }
+      });
+      const frag = document.createDocumentFragment();
+      let i = 0;
+      while (i < text.length) {
+        let j = i;
+        while (j < text.length && mask[j] === mask[i]) j++;
+        const chunk = text.slice(i, j);
+        if (mask[i]) { const m = document.createElement('mark'); m.textContent = chunk; frag.appendChild(m); }
+        else { frag.appendChild(document.createTextNode(chunk)); }
+        i = j;
+      }
+      return frag;
+    }
 
     function bpmInitPicker(root) {
       const input = root.querySelector('input[type="text"]');
       const hidden = root.querySelector('input[type="hidden"]');
       const list = root.querySelector('.picker-list');
+      const chosen = root.querySelector('.picker-chosen');
       let items = [];
+      let total = 0;
+      let tokens = [];
       let active = -1;
 
       const optional = root.dataset.optional === '1'; // รายการเก่าที่ยังไม่เคยมีผู้ขอใช้ เว้นว่างได้ (แต่ถ้าพิมพ์แล้วต้องเลือกจากรายการ)
@@ -539,10 +573,21 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
         const ok = hidden.value || (optional && input.value.trim() === '');
         input.setCustomValidity(ok ? '' : 'กรุณาเลือกชื่อผู้ขอใช้จากรายการที่ขึ้นมา');
       }
+      function showChosen(u) {
+        root.classList.toggle('is-selected', !!u);
+        if (u) {
+          const sub = [u.pos, u.unit].filter(Boolean).join(' · ');
+          chosen.textContent = sub ? 'เลือกแล้ว — ' + sub : 'เลือกแล้ว';
+          chosen.hidden = false;
+        } else {
+          chosen.hidden = true;
+        }
+      }
       function close() { list.hidden = true; active = -1; }
       function choose(u) {
         input.value = u.name;
         hidden.value = String(u.id);
+        showChosen(u);
         validity();
         close();
       }
@@ -551,31 +596,55 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
         if (items.length === 0) {
           const li = document.createElement('li');
           li.className = 'picker-empty';
-          li.textContent = 'ไม่พบชื่อที่ตรงกัน';
+          li.textContent = 'ไม่พบชื่อที่ตรงกัน — ลองพิมพ์ส่วนอื่นของชื่อ หรือชื่อสกุล';
           list.appendChild(li);
+        } else {
+          const head = document.createElement('li');
+          head.className = 'picker-head';
+          head.textContent = 'พบ ' + total + ' คน — เลือกชื่อที่ต้องการ';
+          list.appendChild(head);
         }
         items.forEach(function (u, i) {
           const li = document.createElement('li');
           li.className = 'picker-item' + (i === active ? ' active' : '');
           li.setAttribute('role', 'option');
+          const av = document.createElement('div');
+          av.className = 'picker-avatar picker-av-' + (u.id % 6);
+          av.textContent = bpmPickerInitials(u.name);
+          const body = document.createElement('div');
+          body.className = 'picker-body';
           const n = document.createElement('div');
-          n.textContent = u.name;
-          li.appendChild(n);
+          n.className = 'picker-name';
+          n.appendChild(bpmHighlight(u.name, tokens));
+          body.appendChild(n);
           const sub = [u.pos, u.unit].filter(Boolean).join(' · ');
           if (sub) {
             const s = document.createElement('div');
             s.className = 'picker-sub';
             s.textContent = sub;
-            li.appendChild(s);
+            body.appendChild(s);
           }
+          li.appendChild(av);
+          li.appendChild(body);
           li.addEventListener('mousedown', function (e) { e.preventDefault(); choose(u); });
+          li.addEventListener('mousemove', function () {
+            if (active !== i) { active = i; list.querySelectorAll('.picker-item').forEach(function (el, k) { el.classList.toggle('active', k === i); }); }
+          });
           list.appendChild(li);
         });
+        if (total > items.length) {
+          const more = document.createElement('li');
+          more.className = 'picker-more';
+          more.textContent = 'และอีก ' + (total - items.length) + ' คน — พิมพ์เพิ่มเพื่อกรองให้แคบลง';
+          list.appendChild(more);
+        }
         list.hidden = false;
+        const act = list.querySelector('.picker-item.active');
+        if (act) { act.scrollIntoView({ block: 'nearest' }); }
       }
       function search() {
-        const tokens = input.value.toLowerCase().split(/\s+/).filter(Boolean);
-        if (tokens.length === 0) { items = []; close(); return; }
+        tokens = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+        if (tokens.length === 0) { items = []; total = 0; close(); return; }
         const scored = [];
         bpmRequesterUsers.forEach(function (u) {
           const hay = (u.name + ' ' + u.unit + ' ' + u.pos + ' ' + u.u).toLowerCase();
@@ -584,12 +653,13 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
           scored.push({ u: u, score: bare.indexOf(tokens[0]) === 0 ? 0 : 1 });
         });
         scored.sort(function (a, b) { return a.score - b.score || a.u.name.localeCompare(b.u.name, 'th'); });
-        items = scored.slice(0, 8).map(function (x) { return x.u; });
+        total = scored.length;
+        items = scored.slice(0, BPM_PICKER_MAX).map(function (x) { return x.u; });
         active = items.length ? 0 : -1;
         render();
       }
 
-      input.addEventListener('input', function () { hidden.value = ''; validity(); search(); });
+      input.addEventListener('input', function () { hidden.value = ''; showChosen(null); validity(); search(); });
       input.addEventListener('focus', function () { if (!hidden.value && input.value.trim()) search(); });
       input.addEventListener('blur', function () {
         // พิมพ์ชื่อเต็มตรงเป๊ะแล้วออกจากช่อง (ไม่ได้คลิกเลือก) — เลือกให้เองถ้ามีคนชื่อนี้คนเดียว
@@ -606,6 +676,12 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
         else if (e.key === 'Enter') { if (active >= 0 && items[active]) { e.preventDefault(); choose(items[active]); } }
         else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
       });
+
+      // แก้ไขรายการเดิม: มีผู้ขอใช้เลือกไว้แล้ว — แสดงตำแหน่ง/สังกัดใต้ช่อง
+      if (hidden.value) {
+        const cur = bpmRequesterUsers.filter(function (u) { return String(u.id) === hidden.value; })[0];
+        showChosen(cur || { pos: '', unit: '' });
+      }
       validity();
     }
     document.querySelectorAll('[data-picker]').forEach(bpmInitPicker);
