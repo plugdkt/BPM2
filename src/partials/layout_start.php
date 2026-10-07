@@ -8,7 +8,7 @@ require_once __DIR__ . '/icons.php';
  * เปิด layout กลาง (sidebar + header) — ต้องตั้งตัวแปรเหล่านี้ก่อน require ไฟล์นี้เสมอ:
  *   $pageTitle            string  หัวข้อหน้า (แสดงใน <title> และ topbar)
  *   $activeNav            string  หนึ่งใน 'dashboard'|'transactions'|'transfers'|'reports'|
- *                                 'admin-allocations'|'admin-departments'|'admin-budget-groups'|'admin-fiscal-years'|'admin-users'|'admin-audit-log'
+ *                                 'admin-fiscal-years'|'admin-departments'|'admin-budget-groups'|'admin-fund-sources'|'admin-fund-budgets'|'admin-allocations'|'admin-users'|'admin-audit-log'
  *   $user                 array   จาก bpm_require_role()
  * ตัวแปร optional:
  *   $fiscalYear            ?array  ปีงบที่กำลังดูอยู่ (จาก bpm_resolve_fiscal_year()) — ไม่ตั้งจะไม่โชว์ filter
@@ -58,23 +58,32 @@ $navItems = [
       <?php endforeach; ?>
 
       <?php if ($user['role'] === 'ADMIN'):
-        $adminItems = [
-            ['key' => 'admin-allocations',   'label' => 'ตั้งค่างบ',       'href' => bpm_url('admin/allocations.php')],
-            ['key' => 'admin-departments',   'label' => 'สาขาวิชา',        'href' => bpm_url('admin/departments.php')],
-            ['key' => 'admin-budget-groups', 'label' => 'กลุ่มหมวดงบ',     'href' => bpm_url('admin/budget-groups.php')],
-            ['key' => 'admin-fund-sources',  'label' => 'แหล่งเงิน',        'href' => bpm_url('admin/fund-sources.php')],
-            ['key' => 'admin-fund-budgets',  'label' => 'วงเงินแหล่งเงิน',  'href' => bpm_url('admin/fund-budgets.php')],
-            ['key' => 'admin-fiscal-years',  'label' => 'ปีงบประมาณ',      'href' => bpm_url('admin/fiscal-years.php')],
-            ['key' => 'admin-users',         'label' => 'จัดการผู้ใช้',     'href' => bpm_url('admin/users.php')],
-            ['key' => 'admin-audit-log',     'label' => 'ประวัติการเปลี่ยนแปลง', 'href' => bpm_url('admin/audit-log.php')],
+        // แบ่งตามจังหวะการใช้งานจริง: ทำทุกปีงบตามลำดับ 1→2→3 / ข้อมูลหลักตั้งครั้งเดียว (เพิ่มเมื่อมีของใหม่) / ระบบ
+        $adminGroups = [
+            'ขั้นตอนประจำปีงบ' => [
+                ['key' => 'admin-fiscal-years', 'label' => '1. ปีงบประมาณ',     'href' => bpm_url('admin/fiscal-years.php')],
+                ['key' => 'admin-fund-budgets', 'label' => '2. วงเงินแหล่งเงิน', 'href' => bpm_url('admin/fund-budgets.php')],
+                ['key' => 'admin-allocations',  'label' => '3. ตั้งค่างบ',       'href' => bpm_url('admin/allocations.php')],
+            ],
+            'ข้อมูลหลัก (ตั้งครั้งเดียว)' => [
+                ['key' => 'admin-departments',   'label' => 'สาขาวิชา',    'href' => bpm_url('admin/departments.php')],
+                ['key' => 'admin-budget-groups', 'label' => 'กลุ่มหมวดงบ', 'href' => bpm_url('admin/budget-groups.php')],
+                ['key' => 'admin-fund-sources',  'label' => 'แหล่งเงิน',    'href' => bpm_url('admin/fund-sources.php')],
+            ],
+            'ระบบ' => [
+                ['key' => 'admin-users',     'label' => 'จัดการผู้ใช้',          'href' => bpm_url('admin/users.php')],
+                ['key' => 'admin-audit-log', 'label' => 'ประวัติการเปลี่ยนแปลง', 'href' => bpm_url('admin/audit-log.php')],
+            ],
         ]; ?>
         <div class="sidebar-divider"></div>
-        <div class="sidebar-section-label">ผู้ดูแลระบบ</div>
-        <?php foreach ($adminItems as $item): ?>
-          <a href="<?= htmlspecialchars($item['href'], ENT_QUOTES) ?>" class="<?= $activeNav === $item['key'] ? 'active' : '' ?>">
-            <?= bpm_icon('gear', 18) ?>
-            <?= htmlspecialchars($item['label'], ENT_QUOTES) ?>
-          </a>
+        <?php foreach ($adminGroups as $groupLabel => $groupItems): ?>
+          <div class="sidebar-section-label"><?= htmlspecialchars($groupLabel, ENT_QUOTES) ?></div>
+          <?php foreach ($groupItems as $item): ?>
+            <a href="<?= htmlspecialchars($item['href'], ENT_QUOTES) ?>" class="<?= $activeNav === $item['key'] ? 'active' : '' ?>">
+              <?= bpm_icon('gear', 18) ?>
+              <?= htmlspecialchars($item['label'], ENT_QUOTES) ?>
+            </a>
+          <?php endforeach; ?>
         <?php endforeach; ?>
       <?php endif; ?>
     </nav>
