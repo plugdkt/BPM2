@@ -11,6 +11,13 @@ $activeNav = 'admin-fund-budgets';
 $fiscalYear = bpm_resolve_fiscal_year();
 $fiscalYearId = (int) ($fiscalYear['id'] ?? 0);
 $overview = $fiscalYearId ? bpm_fund_envelope_overview($fiscalYearId) : [];
+// แท็บแหล่งเงิน: เลือกด้วย ?source=<id> (ไม่ส่ง = แหล่งแรก) แสดงทีละแหล่ง ไม่ต่อกันยาวลงไปด้านล่าง
+$sourceIds = array_map(static fn ($e) => (int) $e['source']['id'], $overview);
+$selectedSourceId = (int) ($_GET['source'] ?? 0);
+if (!in_array($selectedSourceId, $sourceIds, true)) {
+    $selectedSourceId = $sourceIds[0] ?? 0;
+}
+$sourceTabQs = static fn (int $id) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'source' => $id], static fn ($v) => $v !== null && $v !== ''));
 $fyClosed = ($fiscalYear['status'] ?? '') === 'CLOSED';
 
 $formAction = htmlspecialchars(bpm_url('actions/save-fund-budget.php'), ENT_QUOTES);
@@ -43,7 +50,18 @@ require __DIR__ . '/../../src/partials/layout_start.php';
       <div class="card empty-state">ยังไม่มีแหล่งเงิน — เพิ่มที่เมนู "แหล่งเงิน" ก่อน</div>
     <?php endif; ?>
 
-    <?php foreach ($overview as $env): $src = $env['source']; $isUnspecified = $src['code'] === 'UNSPECIFIED'; $sid = (int) $src['id']; ?>
+    <?php if (count($overview) > 1): ?>
+      <div class="card">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto;">
+          <?php foreach ($overview as $e): $eid = (int) $e['source']['id']; ?>
+            <a href="?<?= $sourceTabQs($eid) ?>" class="filter-chip" style="<?= $selectedSourceId === $eid ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($e['source']['name'], ENT_QUOTES) ?></a>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
+
+    <?php foreach ($overview as $env): $src = $env['source']; $isUnspecified = $src['code'] === 'UNSPECIFIED'; $sid = (int) $src['id'];
+      if ($sid !== $selectedSourceId) { continue; } ?>
       <div class="card">
         <h2><?= htmlspecialchars($src['name'], ENT_QUOTES) ?></h2>
 

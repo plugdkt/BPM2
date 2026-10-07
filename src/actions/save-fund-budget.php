@@ -13,7 +13,7 @@ require_once __DIR__ . '/../bootstrap.php';
 $user = bpm_require_role('ADMIN');
 
 $fiscalYearId = (int) ($_POST['fiscal_year_id'] ?? 0);
-$redirectBack = bpm_url('admin/fund-budgets.php?') . http_build_query(array_filter(['fy' => $fiscalYearId ?: null]));
+$redirectBack = bpm_url('admin/fund-budgets.php?') . http_build_query(array_filter(['fy' => $fiscalYearId ?: null, 'source' => (int) ($_POST['fund_source_id'] ?? 0) ?: null]));
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: ' . $redirectBack);
