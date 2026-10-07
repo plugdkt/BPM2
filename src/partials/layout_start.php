@@ -58,28 +58,27 @@ $navItems = [
       <?php endforeach; ?>
 
       <?php if ($user['role'] === 'ADMIN'):
-        // แบ่งตามจังหวะการใช้งานจริง: ทำทุกปีงบตามลำดับ 1→2→3 / ข้อมูลหลักตั้งครั้งเดียว (เพิ่มเมื่อมีของใหม่) / ระบบ
+        // แยก 2 หมวด: ตั้งค่างบประมาณ (ขั้นตอนประจำปีงบ 1→2→3 แล้วตามด้วยข้อมูลหลักของงบที่ตั้งครั้งเดียว) / ตั้งค่าทั่วไป (สาขา ผู้ใช้ ประวัติ)
         $adminGroups = [
-            'ขั้นตอนประจำปีงบ' => [
+            'ตั้งค่างบประมาณ' => [
                 ['key' => 'admin-fiscal-years', 'label' => '1. ปีงบประมาณ',     'href' => bpm_url('admin/fiscal-years.php')],
                 ['key' => 'admin-fund-budgets', 'label' => '2. วงเงินแหล่งเงิน', 'href' => bpm_url('admin/fund-budgets.php')],
                 ['key' => 'admin-allocations',  'label' => '3. ตั้งค่างบ',       'href' => bpm_url('admin/allocations.php')],
+                ['key' => 'admin-budget-groups', 'label' => 'กลุ่มหมวดงบ', 'href' => bpm_url('admin/budget-groups.php'), 'title' => 'ตั้งครั้งเดียว — เพิ่มเมื่อมีหมวดใหม่', 'gap' => true],
+                ['key' => 'admin-fund-sources',  'label' => 'แหล่งเงิน',    'href' => bpm_url('admin/fund-sources.php'),  'title' => 'ตั้งครั้งเดียว — เพิ่มเมื่อมีแหล่งเงินใหม่'],
             ],
-            'ข้อมูลหลัก (ตั้งครั้งเดียว)' => [
-                ['key' => 'admin-departments',   'label' => 'สาขาวิชา',    'href' => bpm_url('admin/departments.php')],
-                ['key' => 'admin-budget-groups', 'label' => 'กลุ่มหมวดงบ', 'href' => bpm_url('admin/budget-groups.php')],
-                ['key' => 'admin-fund-sources',  'label' => 'แหล่งเงิน',    'href' => bpm_url('admin/fund-sources.php')],
-            ],
-            'ระบบ' => [
-                ['key' => 'admin-users',     'label' => 'จัดการผู้ใช้',          'href' => bpm_url('admin/users.php')],
-                ['key' => 'admin-audit-log', 'label' => 'ประวัติการเปลี่ยนแปลง', 'href' => bpm_url('admin/audit-log.php')],
+            'ตั้งค่าทั่วไป' => [
+                ['key' => 'admin-departments', 'label' => 'สาขาวิชา',            'href' => bpm_url('admin/departments.php')],
+                ['key' => 'admin-users',       'label' => 'จัดการผู้ใช้',          'href' => bpm_url('admin/users.php')],
+                ['key' => 'admin-audit-log',   'label' => 'ประวัติการเปลี่ยนแปลง', 'href' => bpm_url('admin/audit-log.php')],
             ],
         ]; ?>
         <div class="sidebar-divider"></div>
         <?php foreach ($adminGroups as $groupLabel => $groupItems): ?>
           <div class="sidebar-section-label"><?= htmlspecialchars($groupLabel, ENT_QUOTES) ?></div>
           <?php foreach ($groupItems as $item): ?>
-            <a href="<?= htmlspecialchars($item['href'], ENT_QUOTES) ?>" class="<?= $activeNav === $item['key'] ? 'active' : '' ?>">
+            <?php if (!empty($item['gap'])): ?><div style="height:6px;"></div><?php endif; ?>
+            <a href="<?= htmlspecialchars($item['href'], ENT_QUOTES) ?>" class="<?= $activeNav === $item['key'] ? 'active' : '' ?>"<?= isset($item['title']) ? ' title="' . htmlspecialchars($item['title'], ENT_QUOTES) . '"' : '' ?>>
               <?= bpm_icon('gear', 18) ?>
               <?= htmlspecialchars($item['label'], ENT_QUOTES) ?>
             </a>
