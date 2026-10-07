@@ -11,8 +11,9 @@ $user = bpm_require_role('ADMIN');
 $departmentId = (int) ($_POST['department_id'] ?? 0);
 $fiscalYearId = (int) ($_POST['fiscal_year_id'] ?? 0);
 $redirectBack = bpm_url('admin/allocations.php?') . http_build_query(array_filter([
-    'dept' => $departmentId ?: null,
-    'fy'   => $fiscalYearId ?: null,
+    'dept'   => $departmentId ?: null,
+    'fy'     => $fiscalYearId ?: null,
+    'source' => (int) ($_POST['fund_source_id'] ?? 0) ?: null, // กลับแท็บแหล่งเงินของรายการที่เพิ่งบันทึก
 ]));
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

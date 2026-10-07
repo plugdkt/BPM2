@@ -59,6 +59,26 @@ if ($departmentId && $fiscalYearId) {
     $inactiveLineItems = $stmt->fetchAll();
 }
 
+// แท็บแหล่งเงินของตารางรายการงบ: แหล่งเงินที่ยังใช้งาน (ไม่นับ "ไม่ระบุ") + แหล่งที่สาขานี้มีรายการอยู่จริง (รวม "ไม่ระบุ" ถ้ายังมีรายการค้าง)
+// ซ่อนแถบแท็บถ้ามีแหล่งเดียว; ?source=<id> เลือกแท็บ (ไม่ส่ง = แหล่งแรกที่มีรายการ ไม่มีก็แหล่งแรก)
+$itemSourceIds = array_unique(array_map(static fn ($li) => (int) $li['fund_source_id'], array_merge($lineItems, $inactiveLineItems)));
+$sourceTabs = [];
+foreach ($fundSources as $fs) {
+    $isUnspec = $fs['code'] === 'UNSPECIFIED';
+    if (($fs['is_active'] && !$isUnspec) || in_array((int) $fs['id'], $itemSourceIds, true)) {
+        $sourceTabs[(int) $fs['id']] = $fs['name'];
+    }
+}
+$activeItemSources = array_unique(array_map(static fn ($li) => (int) $li['fund_source_id'], $lineItems));
+$selectedSourceId = (int) ($_GET['source'] ?? 0);
+if (!isset($sourceTabs[$selectedSourceId])) {
+    $withItems = array_values(array_filter(array_keys($sourceTabs), static fn ($id) => in_array($id, $activeItemSources, true)));
+    $selectedSourceId = $withItems[0] ?? (array_key_first($sourceTabs) ?? 1);
+}
+$shownLineItems = array_values(array_filter($lineItems, static fn ($li) => (int) $li['fund_source_id'] === $selectedSourceId));
+$shownInactive = array_values(array_filter($inactiveLineItems, static fn ($li) => (int) $li['fund_source_id'] === $selectedSourceId));
+$sourceTabQs = static fn (int $sid) => http_build_query(array_filter(['dept' => $departmentId, 'fy' => $fiscalYearId ?: null, 'source' => $sid]));
+
 require __DIR__ . '/../../src/partials/layout_start.php';
 ?>
 
@@ -118,7 +138,7 @@ require __DIR__ . '/../../src/partials/layout_start.php';
       </div>
 
       <div class="card" style="flex:1;">
-        <h2>แบ่งตามหมวดงบ</h2>
+        <h2>แบ่งตามหมวดงบ<?= count($sourceTabs) > 1 ? ' (ทุกแหล่งเงิน)' : '' ?></h2>
         <?php if (empty($groupSummary)): ?>
           <p class="text-muted small">ยังไม่มีรายการงบของสาขานี้</p>
         <?php else: ?>
@@ -141,10 +161,21 @@ require __DIR__ . '/../../src/partials/layout_start.php';
       </div>
     </div>
 
-    <div class="card">
-      <h2>รายการงบ</h2>
+    <?php if (count($sourceTabs) > 1): ?>
+      <div class="card">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto; align-items:center;">
+          <span class="text-muted small" style="margin-right:2px;">แหล่งเงิน:</span>
+          <?php foreach ($sourceTabs as $sid => $sname): ?>
+            <a href="?<?= $sourceTabQs($sid) ?>" class="filter-chip" style="<?= $selectedSourceId === $sid ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($sname, ENT_QUOTES) ?></a>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
 
-      <?php foreach ($lineItems as $li): $fid = 'li-form-' . (int) $li['id']; $tfid = 'li-toggle-' . (int) $li['id']; ?>
+    <div class="card">
+      <h2>รายการงบ<?= count($sourceTabs) > 1 ? ' — ' . htmlspecialchars($sourceTabs[$selectedSourceId] ?? '', ENT_QUOTES) : '' ?></h2>
+
+      <?php foreach ($shownLineItems as $li): $fid = 'li-form-' . (int) $li['id']; $tfid = 'li-toggle-' . (int) $li['id']; ?>
         <form id="<?= $fid ?>" method="post" action="<?= htmlspecialchars(bpm_url('actions/save-line-item.php'), ENT_QUOTES) ?>">
           <?= bpm_csrf_field() ?>
           <input type="hidden" name="id" value="<?= (int) $li['id'] ?>">
@@ -174,7 +205,7 @@ require __DIR__ . '/../../src/partials/layout_start.php';
           </tr>
         </thead>
         <tbody>
-          <?php foreach ($lineItems as $li): $fid = 'li-form-' . (int) $li['id']; $tfid = 'li-toggle-' . (int) $li['id']; ?>
+          <?php foreach ($shownLineItems as $li): $fid = 'li-form-' . (int) $li['id']; $tfid = 'li-toggle-' . (int) $li['id']; ?>
             <tr>
               <td><input type="text" name="name" form="<?= $fid ?>" class="field" value="<?= htmlspecialchars($li['name'], ENT_QUOTES) ?>" required></td>
               <td><select name="fund_source_id" form="<?= $fid ?>" class="field"><?php $renderSourceOptions($fundSources, (int) $li['fund_source_id']); ?></select></td>
@@ -201,7 +232,7 @@ require __DIR__ . '/../../src/partials/layout_start.php';
 
           <tr>
             <td><input type="text" name="name" form="li-form-new" class="field" placeholder="ชื่อรายการใหม่" required></td>
-            <td><select name="fund_source_id" form="li-form-new" class="field"><?php $renderSourceOptions($fundSources, 1); ?></select></td>
+            <td><select name="fund_source_id" form="li-form-new" class="field"><?php $renderSourceOptions($fundSources, $selectedSourceId); ?></select></td>
             <td><input type="text" name="starting_amount" form="li-form-new" class="field num" placeholder="0.00" required></td>
             <td>
               <select name="group_id" form="li-form-new" class="field">
@@ -218,12 +249,12 @@ require __DIR__ . '/../../src/partials/layout_start.php';
         </tbody>
       </table>
 
-      <?php if (!empty($inactiveLineItems)): ?>
+      <?php if (!empty($shownInactive)): ?>
         <details style="margin-top:18px;">
-          <summary style="cursor:pointer; color:var(--text-muted); font-size:13px; font-weight:500;">รายการที่ปิดใช้งานแล้ว (<?= count($inactiveLineItems) ?>)</summary>
+          <summary style="cursor:pointer; color:var(--text-muted); font-size:13px; font-weight:500;">รายการที่ปิดใช้งานแล้ว (<?= count($shownInactive) ?>)</summary>
           <table class="data-table" style="margin-top:10px;">
             <tbody>
-              <?php foreach ($inactiveLineItems as $li): $tfid = 'li-toggle-inactive-' . (int) $li['id']; $renderToggleForm($li, $departmentId, $fiscalYearId, $tfid); ?>
+              <?php foreach ($shownInactive as $li): $tfid = 'li-toggle-inactive-' . (int) $li['id']; $renderToggleForm($li, $departmentId, $fiscalYearId, $tfid); ?>
                 <tr>
                   <td class="text-muted"><?= htmlspecialchars($li['name'], ENT_QUOTES) ?></td>
                   <td class="text-muted num" style="width:150px;"><?= htmlspecialchars(bpm_money((float) $li['starting_amount']), ENT_QUOTES) ?></td>
