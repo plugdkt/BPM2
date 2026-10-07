@@ -210,7 +210,7 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
               $d = $lineItemDetails[(int) $li['id']]; ?>
               <?php $spent = $d['expense'] - $d['income']; ?>
               <tr>
-                <td><?= htmlspecialchars($li['name'], ENT_QUOTES) ?></td>
+                <td><?= htmlspecialchars(bpm_li_label($li), ENT_QUOTES) ?></td>
                 <td class="num"><?= htmlspecialchars(bpm_money($d['total_budget']), ENT_QUOTES) ?></td>
                 <td class="num"><?= htmlspecialchars(bpm_money($spent), ENT_QUOTES) ?></td>
                 <td class="num" style="<?= $d['balance'] < 0 ? 'color: var(--status-danger-text);' : 'color: var(--status-success-text);' ?>"><?= htmlspecialchars(bpm_money($d['balance']), ENT_QUOTES) ?></td>
@@ -398,7 +398,7 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
             <select name="line_item_id" id="line_item_id" class="field" onchange="bpmUpdateBalancePreview()" required>
               <?php foreach ($lineItems as $li): ?>
                 <option value="<?= (int) $li['id'] ?>" data-travel="<?= (int) $li['requires_travel_detail'] ?>" <?= $preselectLineItemId === (int) $li['id'] ? 'selected' : '' ?>>
-                  <?= htmlspecialchars($li['name'], ENT_QUOTES) ?>
+                  <?= htmlspecialchars(bpm_li_label($li), ENT_QUOTES) ?>
                 </option>
               <?php endforeach; ?>
             </select>

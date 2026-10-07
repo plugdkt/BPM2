@@ -57,6 +57,9 @@ if (!$fromItem || !$toItem) {
         || (int) $fromItem['fiscal_year_id'] !== (int) $toItem['fiscal_year_id']) {
         $errors[] = 'ต้องโอนย้ายภายในสาขาและปีงบเดียวกันเท่านั้น';
     }
+    if ((int) $fromItem['fund_source_id'] !== (int) $toItem['fund_source_id']) {
+        $errors[] = 'โยกย้ายงบข้ามแหล่งเงินไม่ได้ ต้องเป็นรายการในแหล่งเงินเดียวกันเท่านั้น';
+    }
 
     if (in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true) && (int) $fromItem['department_id'] !== (int) $user['department_id']) {
         $errors[] = 'ไม่มีสิทธิ์ยื่นคำขอของสาขาอื่น';

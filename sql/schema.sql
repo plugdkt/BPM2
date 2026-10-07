@@ -41,6 +41,18 @@ CREATE TABLE budget_groups (
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------------------------
+-- แหล่งเงิน (งบรายได้/งบแผ่นดิน/งบผลิตแพทย์/งบผลิตพยาบาล ฯลฯ) — รายการงบ 1 รายการมาจากแหล่งเงินเดียวเท่านั้น
+-- และโยกย้ายงบข้ามแหล่งเงินไม่ได้ (ยืนยันกับฝ่ายการเงินแล้ว) ADMIN เพิ่ม/แก้ไข/ปิดการใช้งานเองได้
+-- แถว code='UNSPECIFIED' (id=1) เป็นค่าเริ่มต้นของรายการงบที่ยังไม่ได้ระบุแหล่งเงิน
+-- ----------------------------------------------------------------------------
+CREATE TABLE fund_sources (
+  id        INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name      VARCHAR(100) NOT NULL,
+  code      VARCHAR(30)  NOT NULL UNIQUE,
+  is_active TINYINT(1)   NOT NULL DEFAULT 1
+) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------------------------
 -- ผู้ใช้งาน (ยืนยันตัวตนผ่าน MEDSCI ACC SSO — ไม่มีการเก็บรหัสผ่านในตารางนี้)
 -- ----------------------------------------------------------------------------
 CREATE TABLE users (
@@ -68,16 +80,18 @@ CREATE TABLE budget_line_items (
   department_id          INT UNSIGNED NOT NULL,
   fiscal_year_id         INT UNSIGNED NOT NULL,
   group_id               INT UNSIGNED NULL,          -- กลุ่มหมวดงบ (optional, ใช้ทำกราฟสรุปภาพรวมเท่านั้น)
-  name                   VARCHAR(255) NOT NULL,       -- "รายการ" เช่น 'ค่าเบี้ยเลี้ยง ค่าที่พัก และค่าพาหนะ'
+  fund_source_id         INT UNSIGNED NOT NULL DEFAULT 1, -- แหล่งเงิน (1 = UNSPECIFIED ไม่ระบุ) — 1 รายการ 1 แหล่ง โยกย้ายข้ามแหล่งไม่ได้
+  name                  VARCHAR(255) NOT NULL,       -- "รายการ" เช่น 'ค่าเบี้ยเลี้ยง ค่าที่พัก และค่าพาหนะ'
   starting_amount        DECIMAL(14,2) NOT NULL DEFAULT 0, -- งบต้นปี (จัดสรรตั้งต้น)
   requires_travel_detail TINYINT(1)   NOT NULL DEFAULT 0,  -- 1 = ต้องกรอกรายละเอียดผู้เดินทางทุกครั้งที่บันทึกรายจ่าย (ดูข้อ 6.6)
   note                   VARCHAR(1000) NULL,          -- หมายเหตุอิสระต่อรายการ
   is_active              TINYINT(1)   NOT NULL DEFAULT 1,
   created_at             TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_line_item (department_id, fiscal_year_id, name),
+  UNIQUE KEY uq_line_item (department_id, fiscal_year_id, fund_source_id, name),
   CONSTRAINT fk_li_department FOREIGN KEY (department_id)  REFERENCES departments(id),
   CONSTRAINT fk_li_fiscalyear FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_years(id),
-  CONSTRAINT fk_li_group      FOREIGN KEY (group_id)       REFERENCES budget_groups(id)
+  CONSTRAINT fk_li_group      FOREIGN KEY (group_id)       REFERENCES budget_groups(id),
+  CONSTRAINT fk_li_fundsource FOREIGN KEY (fund_source_id) REFERENCES fund_sources(id)
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------------------------
@@ -183,6 +197,10 @@ INSERT INTO budget_groups (name, code) VALUES
   ('ค่าครุภัณฑ์', 'EQUIPMENT'),
   ('โครงการ', 'PROJECT'),
   ('อื่นๆ', 'OTHER');
+
+-- แหล่งเงิน: แถวแรกต้องเป็น UNSPECIFIED (id=1) เสมอ เพราะเป็น DEFAULT ของ budget_line_items.fund_source_id
+INSERT INTO fund_sources (name, code) VALUES
+  ('ไม่ระบุแหล่งเงิน', 'UNSPECIFIED');
 
 -- ปีงบประมาณ พ.ศ. 2570 = 1 ต.ค. 2569 (ค.ศ. 2026) – 30 ก.ย. 2570 (ค.ศ. 2027)
 -- ระบบเริ่มนับตั้งแต่ปีงบนี้เป็นต้นไป ไม่ import ข้อมูลปีงบ 2569 ย้อนหลัง (ยืนยันแล้ว ดูข้อ 13)

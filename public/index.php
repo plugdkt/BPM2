@@ -23,6 +23,7 @@ $summary = bpm_department_summary($selectedDepartmentId, (int) $fiscalYear['id']
 $groups  = bpm_group_comparison($selectedDepartmentId, (int) $fiscalYear['id']);
 $quarters = bpm_quarterly_spend($selectedDepartmentId, (int) $fiscalYear['id']);
 $recent  = bpm_recent_transactions($selectedDepartmentId, (int) $fiscalYear['id'], 8);
+$fundSourceRows = bpm_fund_source_summary($selectedDepartmentId, (int) $fiscalYear['id']);
 
 $maxGroupAmount = 0.0;
 foreach ($groups as $g) {
@@ -120,6 +121,37 @@ $deptTabQs = static fn ($deptId) => http_build_query(array_filter([
           </tr>
         </tfoot>
       </table>
+    </div>
+  <?php endif; ?>
+
+  <?php if (!empty($fundSourceRows)): ?>
+    <div class="card">
+      <h2>สรุปตามแหล่งเงิน</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>แหล่งเงิน</th>
+            <th class="num">จัดสรร</th>
+            <th class="num">เบิกจ่ายแล้ว</th>
+            <th class="num">คงเหลือ</th>
+            <th class="num">% เบิกจ่าย</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($fundSourceRows as $fr): ?>
+            <tr>
+              <td><?= htmlspecialchars($fr['name'], ENT_QUOTES) ?></td>
+              <td class="num"><?= htmlspecialchars(bpm_money((float) $fr['allocated']), ENT_QUOTES) ?></td>
+              <td class="num"><?= htmlspecialchars(bpm_money((float) $fr['spent']), ENT_QUOTES) ?></td>
+              <td class="num" style="<?= $fr['balance'] < 0 ? 'color: var(--status-danger-text);' : '' ?>"><?= htmlspecialchars(bpm_money($fr['balance']), ENT_QUOTES) ?></td>
+              <td class="num"><?= number_format($fr['spent_pct'], 1) ?>%</td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+      <?php if (count($fundSourceRows) === 1 && $fundSourceRows[0]['code'] === 'UNSPECIFIED'): ?>
+        <p class="text-muted small" style="margin-top:10px;">ยังไม่ได้ระบุแหล่งเงินให้รายการงบ — ADMIN ตั้งค่าได้ที่เมนู "แหล่งเงิน" แล้วเลือกแหล่งเงินของแต่ละรายการที่หน้า "ตั้งค่างบ"</p>
+      <?php endif; ?>
     </div>
   <?php endif; ?>
 

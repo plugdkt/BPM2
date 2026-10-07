@@ -64,16 +64,75 @@ function bpm_line_item_balance(int $lineItemId, bool $forUpdate = false): array
     ];
 }
 
-/** รายการ line item ที่ยัง active ของสาขา+ปีงบหนึ่ง เรียงตามชื่อ — ใช้ประกอบ dropdown/autocomplete */
+/**
+ * SQL expression ป้ายชื่อรายการงบ: ถ้ามีแหล่งเงินจริง (ไม่ใช่ UNSPECIFIED) ต่อท้ายด้วย [ชื่อแหล่งเงิน]
+ * เพราะรายการชื่อเดียวกันอยู่ได้หลายแหล่งเงิน (เช่น "ค่าวัสดุ [งบรายได้]" กับ "ค่าวัสดุ [งบแผ่นดิน]")
+ */
+function bpm_li_label_sql(string $li = 'li', string $fs = 'fs'): string
+{
+    return "IF({$fs}.code = 'UNSPECIFIED', {$li}.name, CONCAT({$li}.name, ' [', {$fs}.name, ']'))";
+}
+
+/** ป้ายชื่อรายการงบฝั่ง PHP (คู่กับ bpm_li_label_sql) — ต้องมี fund_source_name/code ติดมากับแถวนั้น */
+function bpm_li_label(array $li): string
+{
+    $code = $li['fund_source_code'] ?? 'UNSPECIFIED';
+    return $code === 'UNSPECIFIED' ? (string) $li['name'] : $li['name'] . ' [' . $li['fund_source_name'] . ']';
+}
+
+/** รายการ line item ที่ยัง active ของสาขา+ปีงบหนึ่ง เรียงตามชื่อ — ใช้ประกอบ dropdown/autocomplete (มี fund_source_name/code ติดมาด้วย) */
 function bpm_line_items_for_department(int $departmentId, int $fiscalYearId): array
 {
     $stmt = bpm_db()->prepare(
-        'SELECT * FROM budget_line_items
-         WHERE department_id = ? AND fiscal_year_id = ? AND is_active = 1
-         ORDER BY name'
+        'SELECT li.*, fs.name AS fund_source_name, fs.code AS fund_source_code
+         FROM budget_line_items li
+         JOIN fund_sources fs ON fs.id = li.fund_source_id
+         WHERE li.department_id = ? AND li.fiscal_year_id = ? AND li.is_active = 1
+         ORDER BY li.name, fs.id'
     );
     $stmt->execute([$departmentId, $fiscalYearId]);
     return $stmt->fetchAll();
+}
+
+/** แหล่งเงินทั้งหมด (ยังใช้งานอยู่) เรียงตาม id — ใช้ประกอบ dropdown ในหน้าตั้งค่างบ */
+function bpm_all_fund_sources(): array
+{
+    return bpm_db()->query('SELECT * FROM fund_sources WHERE is_active = 1 ORDER BY id')->fetchAll();
+}
+
+/**
+ * สรุปตามแหล่งเงิน: จัดสรร (งบต้นปี) / เบิกจ่ายแล้ว / คงเหลือ ของสาขา(หรือทุกสาขา)+ปีงบหนึ่ง
+ * โยกย้ายงบข้ามแหล่งเงินไม่ได้ ดังนั้นผลรวมงบต้นปีต่อแหล่งเงินคือวงเงินจริงของแหล่งนั้นเสมอ (โอนในสาขาหักล้างกันเอง)
+ */
+function bpm_fund_source_summary(?int $departmentId, int $fiscalYearId): array
+{
+    $params = [$fiscalYearId];
+    $deptFilter = '';
+    if ($departmentId !== null) {
+        $deptFilter = ' AND li.department_id = ?';
+        $params[] = $departmentId;
+    }
+
+    $stmt = bpm_db()->prepare(
+        "SELECT fs.id, fs.name, fs.code,
+            COALESCE(SUM(li.starting_amount), 0) AS allocated,
+            COALESCE(SUM(tx_exp.amt), 0) - COALESCE(SUM(tx_inc.amt), 0) AS spent
+         FROM fund_sources fs
+         JOIN budget_line_items li ON li.fund_source_id = fs.id AND li.fiscal_year_id = ? AND li.is_active = 1{$deptFilter}
+         LEFT JOIN (SELECT line_item_id AS id, SUM(amount) AS amt FROM transactions WHERE type = 'EXPENSE' GROUP BY line_item_id) tx_exp ON tx_exp.id = li.id
+         LEFT JOIN (SELECT line_item_id AS id, SUM(amount) AS amt FROM transactions WHERE type = 'INCOME' GROUP BY line_item_id) tx_inc ON tx_inc.id = li.id
+         GROUP BY fs.id, fs.name, fs.code
+         ORDER BY fs.id"
+    );
+    $stmt->execute($params);
+
+    $rows = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $allocated = (float) $r['allocated'];
+        $spent = (float) $r['spent'];
+        $rows[] = $r + ['balance' => $allocated - $spent, 'spent_pct' => $allocated > 0 ? ($spent / $allocated) * 100 : 0.0];
+    }
+    return $rows;
 }
 
 /**
@@ -204,9 +263,10 @@ function bpm_recent_transactions(?int $departmentId, int $fiscalYearId, int $lim
     $limit = max(1, min(200, $limit)); // clamp เอง แล้วค่อย interpolate ตรงๆ เพราะ PDO bind LIMIT ไม่เสถียรทุก driver
 
     $stmt = $db->prepare(
-        "SELECT t.*, li.name AS line_item_name, d.name AS department_name
+        "SELECT t.*, " . bpm_li_label_sql() . " AS line_item_name, d.name AS department_name
          FROM transactions t
          JOIN budget_line_items li ON li.id = t.line_item_id
+         JOIN fund_sources fs ON fs.id = li.fund_source_id
          JOIN departments d ON d.id = li.department_id
          WHERE li.fiscal_year_id = ?{$deptFilter}
          ORDER BY t.txn_date DESC, t.id DESC
@@ -263,9 +323,10 @@ function bpm_list_transactions(?int $departmentId, int $fiscalYearId, int $page 
 
     $offset = ($page - 1) * $perPage;
     $rowsStmt = $db->prepare(
-        "SELECT t.*, li.name AS line_item_name, li.department_id, li.requires_travel_detail, d.name AS department_name
+        "SELECT t.*, " . bpm_li_label_sql() . " AS line_item_name, li.department_id, li.requires_travel_detail, d.name AS department_name
          FROM transactions t
          JOIN budget_line_items li ON li.id = t.line_item_id
+         JOIN fund_sources fs ON fs.id = li.fund_source_id
          JOIN departments d ON d.id = li.department_id
          WHERE li.fiscal_year_id = ?{$deptFilter}{$groupFilter}{$searchFilter}
          ORDER BY t.txn_date DESC, t.id DESC
@@ -296,12 +357,14 @@ function bpm_list_transfers(?int $departmentId, int $fiscalYearId): array
     $stmt = $db->prepare(
         "SELECT bt.*,
             d.name AS department_name,
-            fromLi.name AS from_name, toLi.name AS to_name,
+            " . bpm_li_label_sql('fromLi', 'fromFs') . " AS from_name, " . bpm_li_label_sql('toLi', 'toFs') . " AS to_name,
             reqUser.name AS requested_by_name, appUser.name AS approved_by_name
          FROM budget_transfers bt
          JOIN departments d ON d.id = bt.department_id
          JOIN budget_line_items fromLi ON fromLi.id = bt.from_line_item_id
+         JOIN fund_sources fromFs ON fromFs.id = fromLi.fund_source_id
          JOIN budget_line_items toLi ON toLi.id = bt.to_line_item_id
+         JOIN fund_sources toFs ON toFs.id = toLi.fund_source_id
          JOIN users reqUser ON reqUser.id = bt.requested_by
          LEFT JOIN users appUser ON appUser.id = bt.approved_by
          WHERE bt.fiscal_year_id = ?{$deptFilter}
@@ -326,11 +389,12 @@ function bpm_report_line_items(?int $departmentId, int $fiscalYearId): array
     }
 
     $stmt = $db->prepare(
-        "SELECT li.*, d.name AS department_name,
+        "SELECT li.*, d.name AS department_name, fs.name AS fund_source_name, fs.code AS fund_source_code,
             COALESCE(ti.amt, 0) AS transfer_in, COALESCE(t_out.amt, 0) AS transfer_out,
             COALESCE(tx_exp.amt, 0) AS expense, COALESCE(tx_inc.amt, 0) AS income
          FROM budget_line_items li
          JOIN departments d ON d.id = li.department_id
+         JOIN fund_sources fs ON fs.id = li.fund_source_id
          LEFT JOIN (SELECT to_line_item_id AS id, SUM(amount) AS amt FROM budget_transfers WHERE status = 'APPROVED' GROUP BY to_line_item_id) ti ON ti.id = li.id
          LEFT JOIN (SELECT from_line_item_id AS id, SUM(amount) AS amt FROM budget_transfers WHERE status = 'APPROVED' GROUP BY from_line_item_id) t_out ON t_out.id = li.id
          LEFT JOIN (SELECT line_item_id AS id, SUM(amount) AS amt FROM transactions WHERE type = 'EXPENSE' GROUP BY line_item_id) tx_exp ON tx_exp.id = li.id

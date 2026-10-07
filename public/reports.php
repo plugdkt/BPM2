@@ -59,7 +59,7 @@ if ($exportType === 'excel' || $exportType === 'pdf') {
         $rows = [];
         foreach ($items as $it) {
             $rows[] = [
-                $it['department_name'], $it['name'],
+                $it['department_name'], bpm_li_label($it),
                 number_format($it['total_budget'], 2, '.', ''),
                 number_format($it['spent'], 2, '.', ''),
                 number_format($it['balance'], 2, '.', ''),
@@ -243,7 +243,7 @@ $exportQs = $baseQs(['view' => $view]);
               <?php $sumBudget = $sumSpent = $sumBalance = 0.0; foreach ($groupItems as $it): $sumBudget += $it['total_budget']; $sumSpent += $it['spent']; $sumBalance += $it['balance']; ?>
                 <tr>
                   <?php if ($selectedDepartmentId === null): ?><td><?= htmlspecialchars($it['department_name'], ENT_QUOTES) ?></td><?php endif; ?>
-                  <td><?= htmlspecialchars($it['name'], ENT_QUOTES) ?></td>
+                  <td><?= htmlspecialchars(bpm_li_label($it), ENT_QUOTES) ?></td>
                   <td class="num"><?= htmlspecialchars(bpm_money($it['total_budget']), ENT_QUOTES) ?></td>
                   <td class="num"><?= htmlspecialchars(bpm_money($it['spent']), ENT_QUOTES) ?></td>
                   <td class="num" style="color: var(--status-success-text);"><?= htmlspecialchars(bpm_money($it['balance']), ENT_QUOTES) ?></td>

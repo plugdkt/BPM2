@@ -119,7 +119,7 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
               $d = $lineItemDetails[(int) $li['id']]; ?>
               <?php $spent = $d['expense'] - $d['income']; ?>
               <tr>
-                <td><?= htmlspecialchars($li['name'], ENT_QUOTES) ?></td>
+                <td><?= htmlspecialchars(bpm_li_label($li), ENT_QUOTES) ?></td>
                 <td class="num"><?= htmlspecialchars(bpm_money($d['total_budget']), ENT_QUOTES) ?></td>
                 <td class="num"><?= htmlspecialchars(bpm_money($spent), ENT_QUOTES) ?></td>
                 <td class="num" style="<?= $d['balance'] < 0 ? 'color: var(--status-danger-text);' : 'color: var(--status-success-text);' ?>"><?= htmlspecialchars(bpm_money($d['balance']), ENT_QUOTES) ?></td>
@@ -257,7 +257,7 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
             <label class="field-label" for="from_line_item_id">จากหมวด</label>
             <select name="from_line_item_id" id="from_line_item_id" class="field" onchange="bpmUpdateTransferPreview()" required>
               <?php foreach ($lineItems as $li): ?>
-                <option value="<?= (int) $li['id'] ?>"><?= htmlspecialchars($li['name'], ENT_QUOTES) ?></option>
+                <option value="<?= (int) $li['id'] ?>" data-source="<?= (int) $li['fund_source_id'] ?>"><?= htmlspecialchars(bpm_li_label($li), ENT_QUOTES) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
@@ -266,9 +266,10 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
             <label class="field-label" for="to_line_item_id">ไปหมวด</label>
             <select name="to_line_item_id" id="to_line_item_id" class="field" required>
               <?php foreach ($lineItems as $li): ?>
-                <option value="<?= (int) $li['id'] ?>"><?= htmlspecialchars($li['name'], ENT_QUOTES) ?></option>
+                <option value="<?= (int) $li['id'] ?>" data-source="<?= (int) $li['fund_source_id'] ?>"><?= htmlspecialchars(bpm_li_label($li), ENT_QUOTES) ?></option>
               <?php endforeach; ?>
             </select>
+            <p class="text-muted small" style="margin:4px 0 0;">โยกย้ายได้เฉพาะรายการในแหล่งเงินเดียวกันกับหมวดต้นทางเท่านั้น</p>
           </div>
 
           <div>
@@ -299,7 +300,23 @@ $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter([
         <script>
           const bpmLineItemBalances2 = <?= json_encode($balanceMap, JSON_NUMERIC_CHECK) ?>;
 
+          // โยกย้ายข้ามแหล่งเงินไม่ได้ — ซ่อน/ปิดตัวเลือกปลายทางที่คนละแหล่งเงินกับต้นทาง (ฝั่ง server ตรวจซ้ำอีกชั้นใน create-transfer.php)
+          function bpmFilterTransferTargets() {
+            const from = document.getElementById('from_line_item_id');
+            const to = document.getElementById('to_line_item_id');
+            const src = from.options[from.selectedIndex]?.dataset.source;
+            let firstOk = null;
+            Array.from(to.options).forEach(function (o) {
+              const ok = o.dataset.source === src && o.value !== from.value;
+              o.disabled = !ok;
+              o.hidden = !ok;
+              if (ok && firstOk === null) firstOk = o.value;
+            });
+            if (to.options[to.selectedIndex]?.disabled) to.value = firstOk ?? '';
+          }
+
           function bpmUpdateTransferPreview() {
+            bpmFilterTransferTargets();
             const fromId = document.getElementById('from_line_item_id').value;
             const balance = bpmLineItemBalances2[fromId] ?? 0;
             const amount = parseFloat((document.getElementById('amount').value || '0').replace(/,/g, '')) || 0;

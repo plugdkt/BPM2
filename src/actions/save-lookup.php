@@ -15,6 +15,7 @@ $user = bpm_require_role('ADMIN');
 $allowedTables = [
     'departments'   => '/admin/departments.php',
     'budget_groups' => '/admin/budget-groups.php',
+    'fund_sources'  => '/admin/fund-sources.php',
 ];
 
 $table = (string) ($_POST['table'] ?? '');
@@ -47,6 +48,18 @@ if ($name === '' || $code === '') {
 }
 
 $db = bpm_db();
+
+// แหล่งเงินเริ่มต้น "ไม่ระบุ" เป็น DEFAULT ของรายการงบทุกแถว — ห้ามเปลี่ยนรหัสหรือปิดการใช้งาน
+if ($table === 'fund_sources' && $id > 0) {
+    $cur = $db->prepare('SELECT code FROM fund_sources WHERE id = ?');
+    $cur->execute([$id]);
+    if ($cur->fetchColumn() === 'UNSPECIFIED' && ($code !== 'UNSPECIFIED' || $isActive !== 1)) {
+        bpm_flash_set('danger', 'แหล่งเงิน "ไม่ระบุ" เป็นค่าเริ่มต้นของระบบ เปลี่ยนรหัสหรือปิดการใช้งานไม่ได้ (แก้ชื่อได้)');
+        header('Location: ' . $redirectBack);
+        exit;
+    }
+}
+
 try {
     if ($id > 0) {
         $stmt = $db->prepare("UPDATE {$table} SET name = ?, code = ?, is_active = ? WHERE id = ?");

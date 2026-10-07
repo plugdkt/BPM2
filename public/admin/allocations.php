@@ -16,6 +16,14 @@ $fiscalYear = bpm_resolve_fiscal_year();
 $fiscalYearId = (int) ($fiscalYear['id'] ?? 0);
 
 $groups = bpm_db()->query('SELECT * FROM budget_groups WHERE is_active = 1 ORDER BY id')->fetchAll();
+$fundSources = bpm_db()->query('SELECT * FROM fund_sources ORDER BY id')->fetchAll();
+// ตัวเลือกแหล่งเงิน: แสดงเฉพาะที่ยังใช้งาน + แหล่งเงินปัจจุบันของรายการนั้น (แม้ถูกปิดแล้ว) กันค่าเดิมหายตอนบันทึก
+$renderSourceOptions = static function (array $sources, int $current): void {
+    foreach ($sources as $s) {
+        if (!$s['is_active'] && (int) $s['id'] !== $current) { continue; }
+        echo '<option value="' . (int) $s['id'] . '"' . ((int) $s['id'] === $current ? ' selected' : '') . '>' . htmlspecialchars($s['name'] . ($s['is_active'] ? '' : ' (ปิดใช้งาน)'), ENT_QUOTES) . '</option>';
+    }
+};
 $lineItems = ($departmentId && $fiscalYearId) ? bpm_line_items_for_department($departmentId, $fiscalYearId) : [];
 
 $inactiveLineItems = [];
@@ -59,6 +67,7 @@ require __DIR__ . '/../../src/partials/layout_start.php';
           <input type="hidden" name="name" value="<?= htmlspecialchars($li['name'], ENT_QUOTES) ?>">
           <input type="hidden" name="starting_amount" value="<?= number_format((float) $li['starting_amount'], 2, '.', '') ?>">
           <input type="hidden" name="group_id" value="<?= (int) $li['group_id'] ?>">
+          <input type="hidden" name="fund_source_id" value="<?= (int) $li['fund_source_id'] ?>">
           <?php if ($li['requires_travel_detail']): ?><input type="hidden" name="requires_travel_detail" value="1"><?php endif; ?>
           <input type="hidden" name="note" value="<?= htmlspecialchars((string) $li['note'], ENT_QUOTES) ?>">
           <?php if (!$li['is_active']): ?><input type="hidden" name="is_active" value="1"><?php endif; ?>
@@ -89,6 +98,7 @@ require __DIR__ . '/../../src/partials/layout_start.php';
         <thead>
           <tr>
             <th>รายการ</th>
+            <th style="width:150px;">แหล่งเงิน</th>
             <th class="num" style="width:150px;">งบต้นปี</th>
             <th style="width:150px;">กลุ่มหมวด</th>
             <th class="center" style="width:90px;">เดินทาง</th>
@@ -100,6 +110,7 @@ require __DIR__ . '/../../src/partials/layout_start.php';
           <?php foreach ($lineItems as $li): $fid = 'li-form-' . (int) $li['id']; $tfid = 'li-toggle-' . (int) $li['id']; ?>
             <tr>
               <td><input type="text" name="name" form="<?= $fid ?>" class="field" value="<?= htmlspecialchars($li['name'], ENT_QUOTES) ?>" required></td>
+              <td><select name="fund_source_id" form="<?= $fid ?>" class="field"><?php $renderSourceOptions($fundSources, (int) $li['fund_source_id']); ?></select></td>
               <td><input type="text" name="starting_amount" form="<?= $fid ?>" class="field num" value="<?= number_format((float) $li['starting_amount'], 2, '.', '') ?>" required></td>
               <td>
                 <select name="group_id" form="<?= $fid ?>" class="field">
@@ -123,6 +134,7 @@ require __DIR__ . '/../../src/partials/layout_start.php';
 
           <tr>
             <td><input type="text" name="name" form="li-form-new" class="field" placeholder="ชื่อรายการใหม่" required></td>
+            <td><select name="fund_source_id" form="li-form-new" class="field"><?php $renderSourceOptions($fundSources, 1); ?></select></td>
             <td><input type="text" name="starting_amount" form="li-form-new" class="field num" placeholder="0.00" required></td>
             <td>
               <select name="group_id" form="li-form-new" class="field">
@@ -162,6 +174,7 @@ require __DIR__ . '/../../src/partials/layout_start.php';
       <?php endif; ?>
 
       <p class="text-muted small" style="margin-top:14px;">
+        "แหล่งเงิน" (งบรายได้/งบแผ่นดิน/งบผลิตแพทย์ ฯลฯ — ตั้งค่าที่เมนู "แหล่งเงิน") 1 รายการมาจากแหล่งเดียว และ<strong>โยกย้ายงบข้ามแหล่งเงินไม่ได้</strong> — ถ้างบก้อนเดียวกันต้องใช้หลายแหล่ง ให้สร้างเป็นหลายรายการชื่อเดียวกันแยกแหล่ง<br>
         ติ๊ก "เดินทาง" สำหรับรายการที่ต้องกรอกรายละเอียดผู้เดินทางทุกครั้งที่บันทึกรายจ่าย (เช่น ค่าเบี้ยเลี้ยง ค่าที่พัก และค่าพาหนะ — ดู spec.md ข้อ 6.6)<br>
         ไอคอน <?= bpm_icon('trash', 12) ?> ปิดการใช้งานรายการนั้น (ไม่ลบข้อมูลจริง กู้คืนได้เสมอที่ "รายการที่ปิดใช้งานแล้ว" ด้านบน) — รายการที่ปิดใช้งานจะหายไปจากทุกรายงาน/ภาพรวมทันที แต่ธุรกรรมเก่าที่เคยบันทึกไว้ยังอยู่ครบ
       </p>
