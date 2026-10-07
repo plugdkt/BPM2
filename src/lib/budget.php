@@ -756,3 +756,239 @@ function bpm_role_label(?string $role): string
         default             => 'ไม่มีสิทธิ์',
     };
 }
+
+// ---------------------------------------------------------------------------
+// สมุดรายการ (ledger) — หน้าเจาะลึกแบบอ่านอย่างเดียวสำหรับทุก role (รวมผู้บริหาร) ใช้ที่ /ledger.php
+// ---------------------------------------------------------------------------
+
+/** เดือน (ตามปฏิทิน) ของแต่ละไตรมาสปีงบประมาณ — ตรงกับ bpm_fiscal_quarter() */
+const BPM_QUARTER_MONTHS = [1 => [10, 11, 12], 2 => [1, 2, 3], 3 => [4, 5, 6], 4 => [7, 8, 9]];
+
+/**
+ * สร้างเงื่อนไข WHERE สำหรับรายการเบิกจ่าย (alias: t = transactions, li = budget_line_items)
+ * $f: fy (จำเป็น), dept, source, group (null = ทุกกลุ่ม, 0 = ยังไม่ระบุกลุ่ม), quarter (1-4), type (EXPENSE|INCOME), item, q (ค้นหา)
+ * ค่าที่ไม่ใช่ตัวเลข/ไม่อยู่ในช่วงที่ยอมรับจะถูกมองว่า "ไม่กรอง" — bind ทุกค่าด้วย placeholder
+ */
+function bpm_ledger_where(array $f, array &$params): string
+{
+    $params = [(int) $f['fy']];
+    $sql = ' WHERE li.fiscal_year_id = ?';
+
+    if (!empty($f['dept'])) {
+        $sql .= ' AND li.department_id = ?';
+        $params[] = (int) $f['dept'];
+    }
+    if (!empty($f['source'])) {
+        $sql .= ' AND li.fund_source_id = ?';
+        $params[] = (int) $f['source'];
+    }
+    if (isset($f['group']) && $f['group'] !== null) {
+        if ((int) $f['group'] === 0) {
+            $sql .= ' AND li.group_id IS NULL';
+        } else {
+            $sql .= ' AND li.group_id = ?';
+            $params[] = (int) $f['group'];
+        }
+    }
+    if (!empty($f['quarter']) && isset(BPM_QUARTER_MONTHS[(int) $f['quarter']])) {
+        $sql .= ' AND MONTH(t.txn_date) IN (' . implode(',', BPM_QUARTER_MONTHS[(int) $f['quarter']]) . ')';
+    }
+    if (!empty($f['type']) && in_array($f['type'], ['EXPENSE', 'INCOME'], true)) {
+        $sql .= ' AND t.type = ?';
+        $params[] = $f['type'];
+    }
+    if (!empty($f['item'])) {
+        $sql .= ' AND li.id = ?';
+        $params[] = (int) $f['item'];
+    }
+    if (isset($f['q']) && $f['q'] !== '') {
+        $sql .= ' AND (t.description LIKE ? OR li.name LIKE ? OR t.reference_no LIKE ?)';
+        $like = '%' . $f['q'] . '%';
+        array_push($params, $like, $like, $like);
+    }
+
+    return $sql;
+}
+
+/**
+ * รายการเบิกจ่าย/รายรับตามตัวกรอง พร้อมยอดรวมของ "ทั้งชุดที่กรอง" (ไม่ใช่เฉพาะหน้าที่แสดง)
+ * @return array{rows: array, total: int, page: int, per_page: int, total_pages: int, expense: float, income: float}
+ */
+function bpm_ledger_list(array $f, int $page = 1, int $perPage = 50): array
+{
+    $db = bpm_db();
+    $page = max(1, $page);
+    $perPage = max(1, min(200, $perPage));
+    $params = [];
+    $where = bpm_ledger_where($f, $params);
+
+    $sum = $db->prepare(
+        "SELECT COUNT(*) AS cnt,
+            COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount END), 0) AS expense,
+            COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount END), 0) AS income
+         FROM transactions t JOIN budget_line_items li ON li.id = t.line_item_id{$where}"
+    );
+    $sum->execute($params);
+    $s = $sum->fetch();
+    $total = (int) $s['cnt'];
+
+    $offset = ($page - 1) * $perPage;
+    $rows = $db->prepare(
+        "SELECT t.*, li.id AS li_id, " . bpm_li_label_sql() . " AS line_item_name, d.name AS department_name
+         FROM transactions t
+         JOIN budget_line_items li ON li.id = t.line_item_id
+         JOIN fund_sources fs ON fs.id = li.fund_source_id
+         JOIN departments d ON d.id = li.department_id{$where}
+         ORDER BY t.txn_date DESC, t.id DESC
+         LIMIT {$perPage} OFFSET {$offset}"
+    );
+    $rows->execute($params);
+
+    return [
+        'rows' => $rows->fetchAll(), 'total' => $total, 'page' => $page, 'per_page' => $perPage,
+        'total_pages' => (int) max(1, ceil($total / $perPage)),
+        'expense' => (float) $s['expense'], 'income' => (float) $s['income'],
+    ];
+}
+
+/**
+ * แจกแจงยอดเบิกจ่ายของชุดที่กรองตามมิติหนึ่ง: dept | group | source | quarter | item
+ * @return list<array{key: int|string, label: string, expense: float, income: float, net: float, count: int}>
+ *   key = ค่าที่ใช้กรองต่อ (group: 0 = ยังไม่ระบุกลุ่ม) — เรียงตามยอดสุทธิมาก→น้อย (quarter เรียงตามไตรมาส)
+ */
+function bpm_ledger_breakdown(array $f, string $by): array
+{
+    $db = bpm_db();
+    $params = [];
+    $where = bpm_ledger_where($f, $params);
+
+    $dims = [
+        'dept'    => ['li.department_id', 'd.name'],
+        'group'   => ['COALESCE(li.group_id, 0)', "COALESCE(g.name, 'ไม่ระบุกลุ่ม')"],
+        'source'  => ['li.fund_source_id', 'fs.name'],
+        'quarter' => ['CASE WHEN MONTH(t.txn_date) >= 10 THEN 1 WHEN MONTH(t.txn_date) <= 3 THEN 2 WHEN MONTH(t.txn_date) <= 6 THEN 3 ELSE 4 END', "''"],
+        'item'    => ['li.id', bpm_li_label_sql()],
+    ];
+    if (!isset($dims[$by])) {
+        return [];
+    }
+    [$keyExpr, $labelExpr] = $dims[$by];
+
+    $stmt = $db->prepare(
+        "SELECT {$keyExpr} AS k, {$labelExpr} AS label,
+            COUNT(*) AS cnt,
+            COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount END), 0) AS expense,
+            COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount END), 0) AS income
+         FROM transactions t
+         JOIN budget_line_items li ON li.id = t.line_item_id
+         JOIN fund_sources fs ON fs.id = li.fund_source_id
+         JOIN departments d ON d.id = li.department_id
+         LEFT JOIN budget_groups g ON g.id = li.group_id{$where}
+         GROUP BY k, label"
+    );
+    $stmt->execute($params);
+
+    $out = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $label = (string) $r['label'];
+        if ($by === 'quarter') {
+            $label = BPM_QUARTER_LABELS[(int) $r['k']]['label'] . ' (' . BPM_QUARTER_LABELS[(int) $r['k']]['months'] . ')';
+        }
+        $out[] = [
+            'key' => (int) $r['k'], 'label' => $label, 'count' => (int) $r['cnt'],
+            'expense' => (float) $r['expense'], 'income' => (float) $r['income'], 'net' => (float) $r['expense'] - (float) $r['income'],
+        ];
+    }
+    if ($by === 'quarter') {
+        usort($out, static fn ($a, $b) => $a['key'] <=> $b['key']);
+    } else {
+        usort($out, static fn ($a, $b) => $b['net'] <=> $a['net']);
+    }
+
+    return $out;
+}
+
+/**
+ * สมุดรายการของรายการงบหนึ่ง: ข้อมูลรายการ + ยอด (จาก bpm_line_item_balance — แหล่งความจริงเดียว)
+ * + ไทม์ไลน์เรียงตามวันที่ (งบต้นปี, โอนเข้า/ออกที่อนุมัติแล้ว, เบิกจ่าย/รายรับ) พร้อมยอดคงเหลือสะสมทีละบรรทัด
+ * คืน null ถ้าไม่พบรายการ — 'running_matches' = ยอดสะสมสุดท้ายตรงกับ balance ที่คำนวณโดย bpm_line_item_balance()
+ */
+function bpm_line_item_ledger(int $lineItemId): ?array
+{
+    $db = bpm_db();
+    $stmt = $db->prepare(
+        'SELECT li.*, d.name AS department_name, fs.name AS fund_source_name, fs.code AS fund_source_code,
+            g.name AS group_name, g.code AS group_code, fy.year_be, fy.status AS fy_status
+         FROM budget_line_items li
+         JOIN departments d ON d.id = li.department_id
+         JOIN fund_sources fs ON fs.id = li.fund_source_id
+         JOIN fiscal_years fy ON fy.id = li.fiscal_year_id
+         LEFT JOIN budget_groups g ON g.id = li.group_id
+         WHERE li.id = ?'
+    );
+    $stmt->execute([$lineItemId]);
+    $item = $stmt->fetch();
+    if (!$item) {
+        return null;
+    }
+
+    $bal = bpm_line_item_balance($lineItemId);
+
+    $events = [];
+    $events[] = ['date' => $item['created_at'] ? substr((string) $item['created_at'], 0, 10) : '', 'order' => 0, 'id' => 0, 'kind' => 'START', 'label' => 'งบต้นปี', 'ref' => null, 'delta' => (float) $item['starting_amount'], 'type' => null];
+
+    $tr = $db->prepare(
+        "SELECT bt.*, " . bpm_li_label_sql('fromLi', 'fromFs') . " AS from_name, " . bpm_li_label_sql('toLi', 'toFs') . " AS to_name
+         FROM budget_transfers bt
+         JOIN budget_line_items fromLi ON fromLi.id = bt.from_line_item_id JOIN fund_sources fromFs ON fromFs.id = fromLi.fund_source_id
+         JOIN budget_line_items toLi ON toLi.id = bt.to_line_item_id JOIN fund_sources toFs ON toFs.id = toLi.fund_source_id
+         WHERE bt.status = 'APPROVED' AND (bt.from_line_item_id = ? OR bt.to_line_item_id = ?)"
+    );
+    $tr->execute([$lineItemId, $lineItemId]);
+    foreach ($tr->fetchAll() as $t) {
+        $in = (int) $t['to_line_item_id'] === $lineItemId;
+        $events[] = [
+            'date' => substr((string) ($t['decided_at'] ?? $t['created_at']), 0, 10), 'order' => 1, 'id' => (int) $t['id'], 'kind' => 'TRANSFER',
+            'label' => ($t['reversed_of_transfer_id'] ? 'โอนกลับ ' : 'โอน') . ($in ? 'เข้าจาก ' . $t['from_name'] : 'ออกไป ' . $t['to_name']),
+            'ref' => $t['ref_memo_no'], 'note' => $t['reason'], 'delta' => $in ? (float) $t['amount'] : -(float) $t['amount'], 'type' => $in ? 'TRANSFER_IN' : 'TRANSFER_OUT',
+        ];
+    }
+
+    $tx = $db->prepare('SELECT * FROM transactions WHERE line_item_id = ?');
+    $tx->execute([$lineItemId]);
+    foreach ($tx->fetchAll() as $t) {
+        $events[] = [
+            'date' => (string) $t['txn_date'], 'order' => 2, 'id' => (int) $t['id'], 'kind' => 'TXN', 'label' => (string) $t['description'],
+            'ref' => $t['reference_no'], 'note' => null, 'delta' => $t['type'] === 'EXPENSE' ? -(float) $t['amount'] : (float) $t['amount'], 'type' => $t['type'],
+        ];
+    }
+
+    // งบต้นปีขึ้นก่อนเสมอ แล้วเรียงตามวันที่ → โอน → เบิกจ่าย → id
+    usort($events, static function ($a, $b) {
+        if ($a['kind'] === 'START' || $b['kind'] === 'START') {
+            return $a['kind'] === 'START' ? -1 : 1;
+        }
+        return [$a['date'], $a['order'], $a['id']] <=> [$b['date'], $b['order'], $b['id']];
+    });
+    $running = 0.0;
+    foreach ($events as &$e) {
+        $running += $e['delta'];
+        $e['running'] = $running;
+    }
+    unset($e);
+
+    $pending = $db->prepare("SELECT COUNT(*) FROM budget_transfers WHERE status = 'PENDING' AND (from_line_item_id = ? OR to_line_item_id = ?)");
+    $pending->execute([$lineItemId, $lineItemId]);
+
+    $details = [];
+    if ($item['group_code'] === 'EQUIPMENT') {
+        $ds = $db->prepare('SELECT * FROM line_item_details WHERE line_item_id = ? AND is_active = 1 ORDER BY id');
+        $ds->execute([$lineItemId]);
+        $details = $ds->fetchAll();
+    }
+
+    return [
+        'item' => $item, 'balance' => $bal, 'events' => $events, 'pending_transfers' => (int) $pending->fetchColumn(),
+        'details' => $details, 'running_matches' => abs($running - $bal['balance']) < 0.005,
+    ];
+}

@@ -117,6 +117,9 @@ $baseQs = static fn (array $extra = []) => http_build_query(array_filter(
     static fn ($v) => $v !== null && $v !== ''
 ));
 $exportQs = $baseQs(['view' => $view]);
+// ลิงก์เจาะลึก: $ledgerUrl = หน้าสมุดรายการ (อ่านอย่างเดียว ทุก role), $tableUrl = มุมมองตารางรายการของรายงานนี้
+$ledgerUrl = static fn (array $q): string => bpm_url('ledger.php') . '?' . http_build_query(array_filter(array_merge(['fy' => $_GET['fy'] ?? null], $q), static fn ($v) => $v !== null && $v !== ''));
+$tableUrl = static fn (array $q): string => '?' . http_build_query(array_filter(array_merge(['fy' => $_GET['fy'] ?? null, 'view' => 'table'], $q), static fn ($v) => $v !== null && $v !== ''));
 ?>
 
   <div class="card" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px;">
@@ -146,7 +149,7 @@ $exportQs = $baseQs(['view' => $view]);
             <thead>
               <tr>
                 <th>รายการ</th>
-                <?php foreach ($data['departments'] as $d): ?><th class="num"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></th><?php endforeach; ?>
+                <?php foreach ($data['departments'] as $d): ?><th class="num"><a href="<?= htmlspecialchars($tableUrl(['dept' => (int) $d['id']]), ENT_QUOTES) ?>" title="ดูรายละเอียดของสาขานี้"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></a></th><?php endforeach; ?>
                 <th class="num">รวม</th>
               </tr>
             </thead>
@@ -194,11 +197,11 @@ $exportQs = $baseQs(['view' => $view]);
             <tbody>
               <?php foreach ($blk['rows'] as $r): ?>
                 <tr>
-                  <td><?= htmlspecialchars($r['name'], ENT_QUOTES) ?></td>
+                  <td><a href="<?= htmlspecialchars($tableUrl(['dept' => (int) $r['department_id'], 'source' => (int) $blk['source']['id']]), ENT_QUOTES) ?>" title="ดูรายการงบของสาขานี้"><?= htmlspecialchars($r['name'], ENT_QUOTES) ?></a></td>
                   <td class="num"><?= $limitCell($r['limit']) ?></td>
                   <td class="num"><?= htmlspecialchars(bpm_money($r['allocated']), ENT_QUOTES) ?></td>
                   <td class="num"><?= $remCell($r['unallocated']) ?></td>
-                  <td class="num"><?= htmlspecialchars(bpm_money($r['spent']), ENT_QUOTES) ?></td>
+                  <td class="num"><a href="<?= htmlspecialchars($ledgerUrl(['dept' => (int) $r['department_id'], 'source' => (int) $blk['source']['id']]), ENT_QUOTES) ?>" title="ดูรายการเบิกจ่าย"><?= htmlspecialchars(bpm_money($r['spent']), ENT_QUOTES) ?></a></td>
                   <td class="num"><?= $remCell($r['balance']) ?></td>
                   <td class="num"><?= number_format($r['spent_pct'], 1) ?>%</td>
                 </tr>
@@ -208,7 +211,7 @@ $exportQs = $baseQs(['view' => $view]);
                 <td class="num"><?= $limitCell($t['limit']) ?></td>
                 <td class="num"><?= htmlspecialchars(bpm_money($t['allocated']), ENT_QUOTES) ?></td>
                 <td class="num"><?= $remCell($t['unallocated']) ?></td>
-                <td class="num"><?= htmlspecialchars(bpm_money($t['spent']), ENT_QUOTES) ?></td>
+                <td class="num"><a href="<?= htmlspecialchars($ledgerUrl(['dept' => $selectedDepartmentId, 'source' => (int) $blk['source']['id']]), ENT_QUOTES) ?>" title="ดูรายการเบิกจ่าย"><?= htmlspecialchars(bpm_money($t['spent']), ENT_QUOTES) ?></a></td>
                 <td class="num"><?= $remCell($t['balance']) ?></td>
                 <td class="num"><?= number_format($t['spent_pct'], 1) ?>%</td>
               </tr>
@@ -220,7 +223,7 @@ $exportQs = $baseQs(['view' => $view]);
         <?php endif; ?>
       </div>
     <?php endforeach; ?>
-    <p class="text-muted small">"แบ่งเป็นรายการงบ" = ผลรวมงบต้นปีของรายการงบที่เปิดใช้งาน · "ยังแบ่งได้อีก" = วงเงินที่ได้รับ − แบ่งเป็นรายการงบ · "คงเหลือ" = แบ่งเป็นรายการงบ − เบิกจ่ายแล้ว</p>
+    <p class="text-muted small">คลิกชื่อสาขาเพื่อดูรายการงบ · คลิกยอดเบิกจ่ายเพื่อดูรายการเบิกจ่าย (แจกแจงตามสาขา/หมวดเงิน/ไตรมาสได้)<br>"แบ่งเป็นรายการงบ" = ผลรวมงบต้นปีของรายการงบที่เปิดใช้งาน · "ยังแบ่งได้อีก" = วงเงินที่ได้รับ − แบ่งเป็นรายการงบ · "คงเหลือ" = แบ่งเป็นรายการงบ − เบิกจ่ายแล้ว</p>
   <?php else:
     $items = bpm_report_line_items($selectedDepartmentId, (int) $fiscalYear['id']);
     if ($selectedSourceId !== null) {
@@ -300,7 +303,7 @@ $exportQs = $baseQs(['view' => $view]);
                 <tr>
                   <td><a href="?<?= $groupTabQs($g['id'] === 'none' ? 0 : (int) $g['id']) ?>"><?= htmlspecialchars($g['name'], ENT_QUOTES) ?></a></td>
                   <td class="num"><?= htmlspecialchars(bpm_money($g['total_budget']), ENT_QUOTES) ?></td>
-                  <td class="num"><?= htmlspecialchars(bpm_money($g['spent']), ENT_QUOTES) ?></td>
+                  <td class="num"><a href="<?= htmlspecialchars($ledgerUrl(['dept' => $selectedDepartmentId, 'source' => $selectedSourceId, 'group' => $g['id'] === 'none' ? 0 : (int) $g['id']]), ENT_QUOTES) ?>" title="ดูรายการเบิกจ่ายของหมวดนี้"><?= htmlspecialchars(bpm_money($g['spent']), ENT_QUOTES) ?></a></td>
                   <td class="num" style="<?= $g['balance'] < 0 ? 'color: var(--status-danger-text);' : 'color: var(--status-success-text);' ?>"><?= htmlspecialchars(bpm_money($g['balance']), ENT_QUOTES) ?></td>
                   <td class="num"><?= $g['total_budget'] > 0 ? number_format(($g['spent'] / $g['total_budget']) * 100, 1) : '0.0' ?>%</td>
                 </tr>
@@ -314,7 +317,7 @@ $exportQs = $baseQs(['view' => $view]);
               </tr>
             </tbody>
           </table>
-          <p class="text-muted small" style="margin-top:12px;">คลิกชื่อหมวดเงินเพื่อดูรายละเอียดแต่ละรายการ</p>
+          <p class="text-muted small" style="margin-top:12px;">คลิกชื่อหมวดเงินเพื่อดูแต่ละรายการงบ · คลิกยอดเบิกจ่ายเพื่อดูรายการเบิกจ่าย</p>
         <?php endif; ?>
       </div>
     <?php else:
@@ -341,10 +344,10 @@ $exportQs = $baseQs(['view' => $view]);
             <tbody>
               <?php $sumBudget = $sumSpent = $sumBalance = 0.0; foreach ($groupItems as $it): $sumBudget += $it['total_budget']; $sumSpent += $it['spent']; $sumBalance += $it['balance']; ?>
                 <tr>
-                  <?php if ($selectedDepartmentId === null): ?><td><?= htmlspecialchars($it['department_name'], ENT_QUOTES) ?></td><?php endif; ?>
-                  <td><?= htmlspecialchars(bpm_li_label($it), ENT_QUOTES) ?></td>
+                  <?php if ($selectedDepartmentId === null): ?><td><a href="<?= htmlspecialchars($tableUrl(['dept' => (int) $it['department_id'], 'source' => $selectedSourceId, 'group' => $selectedGroupId]), ENT_QUOTES) ?>"><?= htmlspecialchars($it['department_name'], ENT_QUOTES) ?></a></td><?php endif; ?>
+                  <td><a href="<?= htmlspecialchars($ledgerUrl(['item' => (int) $it['id']]), ENT_QUOTES) ?>" title="ดูสมุดของรายการนี้"><?= htmlspecialchars(bpm_li_label($it), ENT_QUOTES) ?></a></td>
                   <td class="num"><?= htmlspecialchars(bpm_money($it['total_budget']), ENT_QUOTES) ?></td>
-                  <td class="num"><?= htmlspecialchars(bpm_money($it['spent']), ENT_QUOTES) ?></td>
+                  <td class="num"><a href="<?= htmlspecialchars($ledgerUrl(['item' => (int) $it['id']]), ENT_QUOTES) ?>" title="ดูรายการเบิกจ่าย"><?= htmlspecialchars(bpm_money($it['spent']), ENT_QUOTES) ?></a></td>
                   <td class="num" style="color: var(--status-success-text);"><?= htmlspecialchars(bpm_money($it['balance']), ENT_QUOTES) ?></td>
                   <td class="num"><?= number_format($it['spent_pct'], 1) ?>%</td>
                 </tr>

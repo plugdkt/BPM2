@@ -40,6 +40,10 @@ require __DIR__ . '/../src/partials/layout_start.php';
 $deptTabQs = static fn ($deptId) => http_build_query(array_filter([
     'fy' => $_GET['fy'] ?? null, 'dept' => $deptId,
 ], static fn ($v) => $v !== null && $v !== ''));
+// ลิงก์เจาะลึก: สมุดรายการ (อ่านอย่างเดียว) และรายงานสรุป — ใส่ fy/dept ของหน้านี้ติดไปด้วย
+$drillQs = static fn (array $q): string => http_build_query(array_filter(array_merge(['fy' => $_GET['fy'] ?? null, 'dept' => $selectedDepartmentId], $q), static fn ($v) => $v !== null && $v !== ''));
+$ledgerUrl = static fn (array $q = []): string => htmlspecialchars(bpm_url('ledger.php') . '?' . $drillQs($q), ENT_QUOTES);
+$reportUrl = static fn (array $q = []): string => htmlspecialchars(bpm_url('reports.php') . '?' . $drillQs($q), ENT_QUOTES);
 ?>
 
   <?php if ($canSeeAllDepartments): ?>
@@ -61,7 +65,7 @@ $deptTabQs = static fn ($deptId) => http_build_query(array_filter([
     </div>
     <div class="kpi-card">
       <div class="label">เบิกจ่ายแล้ว</div>
-      <div class="value"><?= htmlspecialchars(bpm_money($summary['spent']), ENT_QUOTES) ?></div>
+      <div class="value"><a href="<?= $ledgerUrl() ?>" style="color:inherit;" title="ดูรายการเบิกจ่าย"><?= htmlspecialchars(bpm_money($summary['spent']), ENT_QUOTES) ?></a></div>
       <div class="sub">คิดเป็น <?= number_format($summary['spent_pct'], 1) ?>% ของงบจัดสรร</div>
     </div>
     <div class="kpi-card highlight">
@@ -103,7 +107,7 @@ $deptTabQs = static fn ($deptId) => http_build_query(array_filter([
             <tr>
               <td><a href="?<?= $deptTabQs((int) $d['id']) ?>"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></a></td>
               <td class="num"><?= htmlspecialchars(bpm_money($ds['total_budget']), ENT_QUOTES) ?></td>
-              <td class="num"><?= htmlspecialchars(bpm_money($ds['spent']), ENT_QUOTES) ?></td>
+              <td class="num"><a href="<?= htmlspecialchars(bpm_url('ledger.php') . '?' . $drillQs(['dept' => (int) $d['id']]), ENT_QUOTES) ?>" title="ดูรายการเบิกจ่ายของสาขานี้"><?= htmlspecialchars(bpm_money($ds['spent']), ENT_QUOTES) ?></a></td>
               <td class="num" style="<?= $ds['balance'] < 0 ? 'color: var(--status-danger-text);' : '' ?>"><?= htmlspecialchars(bpm_money($ds['balance']), ENT_QUOTES) ?></td>
               <td class="num"><?= number_format($ds['spent_pct'], 1) ?>%</td>
               <td class="center"><span class="pill <?= $statusPill ?>"><?= $statusLabel ?></span></td>
@@ -142,10 +146,10 @@ $deptTabQs = static fn ($deptId) => http_build_query(array_filter([
         <tbody>
           <?php foreach ($fundSourceRows as $fr): ?>
             <tr>
-              <td><?= htmlspecialchars($fr['name'], ENT_QUOTES) ?></td>
+              <td><a href="<?= $reportUrl(['view' => 'sources']) ?>" title="ดูรายงานแยกตามแหล่งเงิน"><?= htmlspecialchars($fr['name'], ENT_QUOTES) ?></a></td>
               <td class="num"><?= $fr['limit'] === null ? '<span class="text-muted">—</span>' : htmlspecialchars(bpm_money((float) $fr['limit']), ENT_QUOTES) ?></td>
               <td class="num"><?= htmlspecialchars(bpm_money((float) $fr['allocated']), ENT_QUOTES) ?></td>
-              <td class="num"><?= htmlspecialchars(bpm_money((float) $fr['spent']), ENT_QUOTES) ?></td>
+              <td class="num"><a href="<?= $ledgerUrl(['source' => (int) $fr['id']]) ?>" title="ดูรายการเบิกจ่าย"><?= htmlspecialchars(bpm_money((float) $fr['spent']), ENT_QUOTES) ?></a></td>
               <td class="num" style="<?= $fr['balance'] < 0 ? 'color: var(--status-danger-text);' : '' ?>"><?= htmlspecialchars(bpm_money($fr['balance']), ENT_QUOTES) ?></td>
               <td class="num"><?= number_format($fr['spent_pct'], 1) ?>%</td>
               <td class="center">
@@ -180,7 +184,7 @@ $deptTabQs = static fn ($deptId) => http_build_query(array_filter([
         </div>
         <div style="display:flex; gap:24px; padding:0 8px;">
           <?php foreach ($groups as $g): ?>
-            <div style="flex:1; text-align:center; font-size:12px; color:var(--text-secondary); padding-top:8px;"><?= htmlspecialchars($g['name'], ENT_QUOTES) ?></div>
+            <div style="flex:1; text-align:center; font-size:12px; color:var(--text-secondary); padding-top:8px;"><a href="<?= $reportUrl(['view' => 'table', 'group' => (int) $g['id']]) ?>" style="color:inherit;" title="ดูรายการงบในหมวดนี้"><?= htmlspecialchars($g['name'], ENT_QUOTES) ?></a></div>
           <?php endforeach; ?>
         </div>
       <?php endif; ?>
@@ -192,7 +196,7 @@ $deptTabQs = static fn ($deptId) => http_build_query(array_filter([
         <?php foreach (BPM_QUARTER_LABELS as $q => $meta): $amt = $quarters[$q]; $pct = $maxQuarter > 0 ? min(100, (abs($amt) / $maxQuarter) * 100) : 0; ?>
           <div>
             <div style="display:flex; justify-content:space-between; font-size:12.5px; color:var(--text-secondary); margin-bottom:5px;">
-              <span><?= $meta['label'] ?> <span style="color:var(--text-muted);">(<?= $meta['months'] ?>)</span></span>
+              <span><a href="<?= $ledgerUrl(['quarter' => $q, 'by' => 'group']) ?>" style="color:inherit;" title="ดูรายการเบิกจ่ายของไตรมาสนี้"><?= $meta['label'] ?> <span style="color:var(--text-muted);">(<?= $meta['months'] ?>)</span></a></span>
               <span style="font-variant-numeric:tabular-nums; color:var(--text-primary); font-weight:500;"><?= htmlspecialchars(bpm_money($amt), ENT_QUOTES) ?></span>
             </div>
             <div class="kpi-progress"><span style="width:<?= $pct ?>%; background: <?= $amt < 0 ? 'var(--status-success-text)' : 'var(--accent)' ?>;"></span></div>
@@ -203,7 +207,7 @@ $deptTabQs = static fn ($deptId) => http_build_query(array_filter([
   </div>
 
   <div class="card">
-    <h2>รายการล่าสุด</h2>
+    <h2>รายการล่าสุด <a href="<?= $ledgerUrl() ?>" class="small" style="font-weight:400; margin-left:8px;">ดูทั้งหมด →</a></h2>
     <?php if (empty($recent)): ?>
       <p class="empty-state">ยังไม่มีรายการเบิกจ่าย/รายรับในปีงบนี้</p>
     <?php else: ?>
@@ -222,7 +226,7 @@ $deptTabQs = static fn ($deptId) => http_build_query(array_filter([
             <tr>
               <td class="center"><?= htmlspecialchars(bpm_thai_date($t['txn_date']), ENT_QUOTES) ?></td>
               <td><?= htmlspecialchars($t['department_name'], ENT_QUOTES) ?></td>
-              <td><?= htmlspecialchars($t['line_item_name'] . ' — ' . $t['description'], ENT_QUOTES) ?></td>
+              <td><a href="<?= htmlspecialchars(bpm_url('ledger.php') . '?item=' . (int) $t['line_item_id'], ENT_QUOTES) ?>" title="ดูสมุดของรายการนี้"><?= htmlspecialchars($t['line_item_name'], ENT_QUOTES) ?></a> — <?= htmlspecialchars($t['description'], ENT_QUOTES) ?></td>
               <td class="center">
                 <span class="pill <?= $t['type'] === 'EXPENSE' ? 'pill-neutral' : 'pill-success' ?>">
                   <?= $t['type'] === 'EXPENSE' ? 'รายจ่าย' : 'รายรับ' ?>
