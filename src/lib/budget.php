@@ -475,8 +475,8 @@ function bpm_pending_transfer_count(?int $departmentId = null): int
 }
 
 /**
- * ภาพรวมวงเงินแหล่งเงิน → หมวดงบ → จัดสรรให้สาขา ของปีงบหนึ่ง (ใช้ทำหน้า admin/fund-budgets.php และ dashboard)
- * total/cap = null หมายถึงยังไม่ได้ตั้งวงเงิน; allocated = SUM(starting_amount) ของรายการงบที่ active (ยอดที่แบ่งให้สาขาแล้ว)
+ * ภาพรวมวงเงินแหล่งเงิน → สาขา ของปีงบหนึ่ง (ใช้ทำหน้า admin/fund-budgets.php)
+ * total/budget = null หมายถึงยังไม่ได้ตั้งวงเงิน; allocated = SUM(starting_amount) ของรายการงบที่ active (ยอดที่แบ่งเป็นรายการงบแล้ว)
  * แหล่งเงิน UNSPECIFIED แสดงเฉพาะเมื่อมีรายการงบอยู่ในนั้นจริง เพื่อให้เห็นว่ามียอดที่ยังไม่ได้ระบุแหล่งเท่าไหร่
  */
 function bpm_fund_envelope_overview(int $fiscalYearId): array
@@ -486,23 +486,6 @@ function bpm_fund_envelope_overview(int $fiscalYearId): array
     $totals = $db->prepare('SELECT fund_source_id, amount FROM fund_source_budgets WHERE fiscal_year_id = ?');
     $totals->execute([$fiscalYearId]);
     $totalMap = $totals->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    $caps = $db->prepare('SELECT fund_source_id, group_id, amount FROM fund_group_budgets WHERE fiscal_year_id = ?');
-    $caps->execute([$fiscalYearId]);
-    $capMap = [];
-    foreach ($caps->fetchAll() as $c) {
-        $capMap[(int) $c['fund_source_id']][(int) $c['group_id']] = (float) $c['amount'];
-    }
-
-    $alloc = $db->prepare(
-        'SELECT fund_source_id, COALESCE(group_id, 0) AS gid, SUM(starting_amount) AS amt
-         FROM budget_line_items WHERE fiscal_year_id = ? AND is_active = 1 GROUP BY fund_source_id, COALESCE(group_id, 0)'
-    );
-    $alloc->execute([$fiscalYearId]);
-    $allocMap = [];
-    foreach ($alloc->fetchAll() as $a) {
-        $allocMap[(int) $a['fund_source_id']][(int) $a['gid']] = (float) $a['amt'];
-    }
 
     $deptBudgets = $db->prepare('SELECT fund_source_id, department_id, amount FROM fund_dept_budgets WHERE fiscal_year_id = ?');
     $deptBudgets->execute([$fiscalYearId]);
@@ -522,24 +505,12 @@ function bpm_fund_envelope_overview(int $fiscalYearId): array
     }
 
     $departments = bpm_all_departments();
-    $groups = $db->query('SELECT id, name FROM budget_groups WHERE is_active = 1 ORDER BY id')->fetchAll();
     $result = [];
     foreach ($db->query('SELECT * FROM fund_sources WHERE is_active = 1 ORDER BY id')->fetchAll() as $src) {
         $sid = (int) $src['id'];
-        $srcAllocated = array_sum($allocMap[$sid] ?? []);
+        $srcAllocated = array_sum($deptAllocMap[$sid] ?? []);
         if ($src['code'] === 'UNSPECIFIED' && $srcAllocated <= 0) {
             continue;
-        }
-
-        $rows = [];
-        foreach ($groups as $g) {
-            $gid = (int) $g['id'];
-            $cap = $capMap[$sid][$gid] ?? null;
-            $al = $allocMap[$sid][$gid] ?? 0.0;
-            $rows[] = ['group_id' => $gid, 'name' => $g['name'], 'cap' => $cap, 'allocated' => $al, 'remaining' => $cap === null ? null : $cap - $al];
-        }
-        if (($allocMap[$sid][0] ?? 0.0) > 0) {
-            $rows[] = ['group_id' => 0, 'name' => 'ไม่ระบุหมวด', 'cap' => null, 'allocated' => $allocMap[$sid][0], 'remaining' => null];
         }
 
         $deptRows = [];
@@ -547,23 +518,17 @@ function bpm_fund_envelope_overview(int $fiscalYearId): array
             $did = (int) $d['id'];
             $budget = $deptBudgetMap[$sid][$did] ?? null;
             $al = $deptAllocMap[$sid][$did] ?? 0.0;
-            if ($budget === null && $al <= 0) {
-                $deptRows[] = ['department_id' => $did, 'name' => $d['name'], 'budget' => null, 'allocated' => 0.0, 'remaining' => null];
-                continue;
-            }
             $deptRows[] = ['department_id' => $did, 'name' => $d['name'], 'budget' => $budget, 'allocated' => $al, 'remaining' => $budget === null ? null : $budget - $al];
         }
 
         $total = isset($totalMap[$sid]) ? (float) $totalMap[$sid] : null;
         $result[] = [
-            'source'        => $src,
-            'total'         => $total,
-            'planned'       => array_sum($capMap[$sid] ?? []), // ผลรวมวงเงินรายหมวดที่ตั้งไว้
-            'dept_planned'  => array_sum($deptBudgetMap[$sid] ?? []), // ผลรวมวงเงินที่ตั้งให้รายสาขา
-            'allocated'     => $srcAllocated,
-            'remaining'     => $total === null ? null : $total - $srcAllocated,
-            'groups'        => $rows,
-            'departments'   => $deptRows,
+            'source'       => $src,
+            'total'        => $total,
+            'dept_planned' => array_sum($deptBudgetMap[$sid] ?? []), // ผลรวมวงเงินที่ตั้งให้รายสาขา
+            'allocated'    => $srcAllocated,
+            'remaining'    => $total === null ? null : $total - $srcAllocated,
+            'departments'  => $deptRows,
         ];
     }
 
@@ -571,10 +536,9 @@ function bpm_fund_envelope_overview(int $fiscalYearId): array
 }
 
 /**
- * ข้อความเตือนเมื่อยอดที่จัดสรรให้สาขาเกินวงเงินที่ตั้งไว้ (ระดับหมวดและระดับแหล่งเงิน) — เตือนอย่างเดียว ไม่ block การบันทึก
- * $groupId: null/0 = รายการที่ไม่ระบุหมวด (ไม่มีวงเงินรายหมวด เช็คแค่ระดับแหล่งเงิน)
+ * ข้อความเตือนเมื่อยอดที่แบ่งเป็นรายการงบเกินวงเงินที่ตั้งไว้ (ระดับสาขาและระดับแหล่งเงิน) — เตือนอย่างเดียว ไม่ block การบันทึก
  */
-function bpm_fund_overage_warnings(int $fiscalYearId, int $fundSourceId, ?int $groupId, ?int $departmentId = null): array
+function bpm_fund_overage_warnings(int $fiscalYearId, int $fundSourceId, ?int $departmentId = null): array
 {
     $warnings = [];
     foreach (bpm_fund_envelope_overview($fiscalYearId) as $env) {
@@ -587,12 +551,7 @@ function bpm_fund_overage_warnings(int $fiscalYearId, int $fundSourceId, ?int $g
             }
         }
         if ($env['remaining'] !== null && $env['remaining'] < 0) {
-            $warnings[] = sprintf('ยอดที่จัดสรรให้สาขาของ "%s" เกินวงเงินแหล่งเงิน %s บาท', $env['source']['name'], number_format(-$env['remaining'], 2));
-        }
-        foreach ($env['groups'] as $g) {
-            if ((int) $g['group_id'] === (int) $groupId && $g['remaining'] !== null && $g['remaining'] < 0) {
-                $warnings[] = sprintf('หมวด "%s" ของ "%s" จัดสรรเกินวงเงินหมวด %s บาท', $g['name'], $env['source']['name'], number_format(-$g['remaining'], 2));
-            }
+            $warnings[] = sprintf('ยอดที่แบ่งเป็นรายการงบของ "%s" เกินวงเงินแหล่งเงิน %s บาท', $env['source']['name'], number_format(-$env['remaining'], 2));
         }
     }
     return $warnings;

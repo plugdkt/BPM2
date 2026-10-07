@@ -5,7 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../bootstrap.php';
 
 /**
- * ตั้ง/แก้/ยกเลิกวงเงินแหล่งเงินต่อปีงบ — ระดับแหล่งเงินทั้งก้อน (group_id = 0) หรือระดับหมวดงบภายใต้แหล่งนั้น
+ * ตั้ง/แก้/ยกเลิกวงเงินแหล่งเงินต่อปีงบ — รายสาขา (department_id > 0) หรือทั้งก้อนของแหล่งเงิน (ไม่ส่ง department_id)
  * amount ว่าง = ยกเลิกวงเงินที่ตั้งไว้ (เก็บ snapshot ลง audit_logs) — เป็นข้อมูลวางแผน ไม่ใช่ธุรกรรมการเงิน
  * วงเงินใช้เทียบกับยอดที่จัดสรรให้สาขาและเตือนเมื่อเกิน ไม่ block การบันทึกรายการงบ
  */
@@ -26,8 +26,7 @@ if (!bpm_csrf_verify($_POST['csrf_token'] ?? null)) {
 }
 
 $fundSourceId = (int) ($_POST['fund_source_id'] ?? 0);
-$groupId      = (int) ($_POST['group_id'] ?? 0); // 0 = วงเงินทั้งแหล่งเงิน
-$departmentId = (int) ($_POST['department_id'] ?? 0); // > 0 = วงเงินที่สาขานั้นได้รับจากแหล่งเงินนี้ (ไม่สนใจ group_id)
+$departmentId = (int) ($_POST['department_id'] ?? 0); // > 0 = วงเงินที่สาขานั้นได้รับจากแหล่งเงินนี้, 0 = วงเงินทั้งก้อนของแหล่งเงิน
 $amountRaw    = trim(str_replace(',', '', (string) ($_POST['amount'] ?? '')));
 
 $db = bpm_db();
@@ -39,20 +38,15 @@ $fyStatus = $fyStmt->fetchColumn();
 $srcStmt = $db->prepare("SELECT COUNT(*) FROM fund_sources WHERE id = ? AND code <> 'UNSPECIFIED'");
 $srcStmt->execute([$fundSourceId]);
 
-$grpOk = true;
+$deptOk = true;
 if ($departmentId > 0) {
     $dp = $db->prepare('SELECT COUNT(*) FROM departments WHERE id = ?');
     $dp->execute([$departmentId]);
-    $grpOk = (int) $dp->fetchColumn() > 0;
-    $groupId = 0;
-} elseif ($groupId > 0) {
-    $g = $db->prepare('SELECT COUNT(*) FROM budget_groups WHERE id = ?');
-    $g->execute([$groupId]);
-    $grpOk = (int) $g->fetchColumn() > 0;
+    $deptOk = (int) $dp->fetchColumn() > 0;
 }
 
-if ($fyStatus === false || (int) $srcStmt->fetchColumn() === 0 || !$grpOk) {
-    bpm_flash_set('danger', 'ข้อมูลไม่ถูกต้อง (ไม่พบปีงบ/แหล่งเงิน/หมวดงบ — แหล่งเงิน "ไม่ระบุ" ตั้งวงเงินไม่ได้)');
+if ($fyStatus === false || (int) $srcStmt->fetchColumn() === 0 || !$deptOk) {
+    bpm_flash_set('danger', 'ข้อมูลไม่ถูกต้อง (ไม่พบปีงบ/แหล่งเงิน/สาขา — แหล่งเงิน "ไม่ระบุ" ตั้งวงเงินไม่ได้)');
     header('Location: ' . $redirectBack);
     exit;
 }
@@ -69,8 +63,6 @@ if ($amountRaw !== '' && (!is_numeric($amountRaw) || (float) $amountRaw < 0)) {
 
 if ($departmentId > 0) {
     [$table, $keyCols, $keyVals] = ['fund_dept_budgets', 'fiscal_year_id = ? AND fund_source_id = ? AND department_id = ?', [$fiscalYearId, $fundSourceId, $departmentId]];
-} elseif ($groupId > 0) {
-    [$table, $keyCols, $keyVals] = ['fund_group_budgets', 'fiscal_year_id = ? AND fund_source_id = ? AND group_id = ?', [$fiscalYearId, $fundSourceId, $groupId]];
 } else {
     [$table, $keyCols, $keyVals] = ['fund_source_budgets', 'fiscal_year_id = ? AND fund_source_id = ?', [$fiscalYearId, $fundSourceId]];
 }
@@ -81,7 +73,7 @@ try {
     $cur = $db->prepare("SELECT id, amount FROM {$table} WHERE {$keyCols} FOR UPDATE");
     $cur->execute($keyVals);
     $existing = $cur->fetch();
-    $target = ['fiscal_year_id' => $fiscalYearId, 'fund_source_id' => $fundSourceId, 'group_id' => $groupId, 'department_id' => $departmentId];
+    $target = ['fiscal_year_id' => $fiscalYearId, 'fund_source_id' => $fundSourceId, 'department_id' => $departmentId];
 
     if ($amountRaw === '') {
         if ($existing) {
@@ -97,9 +89,6 @@ try {
         if ($departmentId > 0) {
             $db->prepare('INSERT INTO fund_dept_budgets (fiscal_year_id, fund_source_id, department_id, amount) VALUES (?, ?, ?, ?)')
                ->execute([$fiscalYearId, $fundSourceId, $departmentId, (float) $amountRaw]);
-        } elseif ($groupId > 0) {
-            $db->prepare('INSERT INTO fund_group_budgets (fiscal_year_id, fund_source_id, group_id, amount) VALUES (?, ?, ?, ?)')
-               ->execute([$fiscalYearId, $fundSourceId, $groupId, (float) $amountRaw]);
         } else {
             $db->prepare('INSERT INTO fund_source_budgets (fiscal_year_id, fund_source_id, amount) VALUES (?, ?, ?)')
                ->execute([$fiscalYearId, $fundSourceId, (float) $amountRaw]);
@@ -116,7 +105,7 @@ try {
     exit;
 }
 
-$warnings = bpm_fund_overage_warnings($fiscalYearId, $fundSourceId, $groupId > 0 ? $groupId : null, $departmentId > 0 ? $departmentId : null);
+$warnings = bpm_fund_overage_warnings($fiscalYearId, $fundSourceId, $departmentId > 0 ? $departmentId : null);
 if (!empty($warnings)) {
     bpm_flash_set('warning', 'บันทึกวงเงินแล้ว แต่ ' . implode(' / ', $warnings));
 } else {

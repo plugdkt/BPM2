@@ -110,7 +110,7 @@ try {
     exit;
 }
 
-$overage = bpm_fund_overage_warnings($fiscalYearId, $fundSourceId, $groupId, $departmentId);
+$overage = bpm_fund_overage_warnings($fiscalYearId, $fundSourceId, $departmentId);
 if (!empty($overage)) {
     bpm_flash_set('warning', 'บันทึกรายการงบแล้ว แต่ ' . implode(' / ', $overage));
 } else {
