@@ -8,7 +8,9 @@ $user = bpm_require_role('ADMIN', 'DEPT_STAFF', 'EXECUTIVE_VIEWER', 'DEPT_HEAD')
 
 $fiscalYear = bpm_resolve_fiscal_year();
 $selectedDepartmentId = bpm_resolve_department_filter($user);
-$view = ($_GET['view'] ?? 'table') === 'matrix' ? 'matrix' : 'table';
+$view = in_array($_GET['view'] ?? 'table', ['table', 'matrix', 'sources'], true) ? $_GET['view'] : 'table';
+// source=<id> กรองแหล่งเงิน (เฉพาะมุมมอง "ตารางรายการ"); ไม่ส่ง = ทุกแหล่งเงิน
+$selectedSourceId = isset($_GET['source']) && $_GET['source'] !== '' ? (int) $_GET['source'] : null;
 // group=<id> เจาะจงกลุ่มหมวด, group=0 = เฉพาะที่ยังไม่ระบุกลุ่ม, ไม่ส่ง group เลย = สรุปรวมทุกหมวด (เฉพาะมุมมอง "ตารางรายการ")
 $selectedGroupId = isset($_GET['group']) && $_GET['group'] !== '' ? (int) $_GET['group'] : null;
 $groups = bpm_db()->query('SELECT * FROM budget_groups WHERE is_active = 1 ORDER BY id')->fetchAll();
@@ -47,8 +49,22 @@ if ($exportType === 'excel' || $exportType === 'pdf') {
         }
         $filename = 'bpm-matrix-' . $fiscalYear['year_be'];
         $numericFrom = 1; // ทุกคอลัมน์ตั้งแต่ index 1 (หลัง "รายการ") เป็นตัวเลข
+    } elseif ($view === 'sources') {
+        $headers = ['แหล่งเงิน', 'สาขา', 'วงเงินที่ได้รับ', 'แบ่งเป็นรายการงบ', 'ยังแบ่งได้อีก', 'เบิกจ่ายแล้ว', 'คงเหลือ', '% เบิกจ่าย'];
+        $rows = [];
+        $fmt = static fn (?float $v): string => $v === null ? '' : number_format($v, 2, '.', '');
+        foreach (bpm_report_fund_sources($selectedDepartmentId, (int) $fiscalYear['id']) as $blk) {
+            foreach (array_merge($blk['rows'], [['name' => 'รวม'] + $blk['totals']]) as $r) {
+                $rows[] = [$blk['source']['name'], $r['name'], $fmt($r['limit']), $fmt($r['allocated']), $fmt($r['unallocated']), $fmt($r['spent']), $fmt($r['balance']), number_format($r['spent_pct'], 1) . '%'];
+            }
+        }
+        $filename = 'bpm-sources-' . $fiscalYear['year_be'];
+        $numericFrom = 2; // แหล่งเงิน(0), สาขา(1) เป็นข้อความ ที่เหลือเป็นตัวเลข
     } else {
         $items = bpm_report_line_items($selectedDepartmentId, (int) $fiscalYear['id']);
+        if ($selectedSourceId !== null) {
+            $items = array_values(array_filter($items, static fn ($it) => (int) $it['fund_source_id'] === $selectedSourceId));
+        }
         // ถ้าเลือกดูหมวดเงินเจาะจงอยู่ ให้ export เฉพาะหมวดนั้นตามที่เห็นบนจอ — ถ้าดู "ทั้งหมด" (สรุปรวม) export รายละเอียดเต็มเสมอ มีประโยชน์กว่าสรุปแค่ไม่กี่แถว
         if ($selectedGroupId !== null) {
             $items = array_values(array_filter($items, static function ($it) use ($selectedGroupId) {
@@ -94,7 +110,7 @@ if ($exportType === 'excel' || $exportType === 'pdf') {
 require __DIR__ . '/../src/partials/layout_start.php';
 
 $baseQs = static fn (array $extra = []) => http_build_query(array_filter(
-    array_merge(['fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'group' => $_GET['group'] ?? null], $extra),
+    array_merge(['fy' => $_GET['fy'] ?? null, 'dept' => $_GET['dept'] ?? null, 'group' => $_GET['group'] ?? null, 'source' => $_GET['source'] ?? null], $extra),
     static fn ($v) => $v !== null && $v !== ''
 ));
 $exportQs = $baseQs(['view' => $view]);
@@ -106,6 +122,8 @@ $exportQs = $baseQs(['view' => $view]);
          class="filter-chip" style="<?= $view === 'table' ? 'background:var(--accent); color:#fff;' : '' ?>">ตารางรายการ</a>
       <a href="?<?= $baseQs(['view' => 'matrix']) ?>"
          class="filter-chip" style="<?= $view === 'matrix' ? 'background:var(--accent); color:#fff;' : '' ?>">ตารางไขว้ (ตามสาขา)</a>
+      <a href="?<?= $baseQs(['view' => 'sources']) ?>"
+         class="filter-chip" style="<?= $view === 'sources' ? 'background:var(--accent); color:#fff;' : '' ?>">แยกตามแหล่งเงิน</a>
     </div>
     <div style="display:flex; gap:8px;">
       <a href="?<?= $exportQs ?>&export=excel" class="filter-chip"><?= bpm_icon('download', 14) ?> Export Excel</a>
@@ -144,10 +162,76 @@ $exportQs = $baseQs(['view' => $view]);
         </div>
       <?php endif; ?>
     </div>
+  <?php elseif ($view === 'sources'):
+    $blocks = bpm_report_fund_sources($selectedDepartmentId, (int) $fiscalYear['id']);
+    $remCell = static fn (?float $v): string => $v === null
+        ? '<span class="text-muted">—</span>'
+        : '<span style="color:' . ($v < -0.004 ? 'var(--status-danger-text)' : 'var(--status-success-text)') . ';">' . htmlspecialchars(bpm_money($v), ENT_QUOTES) . ($v < -0.004 ? ' (เกิน)' : '') . '</span>';
+    $limitCell = static fn (?float $v): string => $v === null ? '<span class="text-muted">—</span>' : htmlspecialchars(bpm_money($v), ENT_QUOTES); ?>
+    <?php if (empty($blocks)): ?>
+      <div class="card empty-state">ยังไม่มีข้อมูลแหล่งเงินในปีงบนี้ — ตั้งค่าที่เมนู "ตั้งค่างบประมาณ"</div>
+    <?php endif; ?>
+    <?php foreach ($blocks as $blk): $t = $blk['totals']; ?>
+      <div class="card">
+        <h2><?= htmlspecialchars($blk['source']['name'], ENT_QUOTES) ?> — ปีงบ พ.ศ. <?= (int) $fiscalYear['year_be'] ?>
+          <?php if (($blk['source']['code'] ?? '') === 'UNSPECIFIED'): ?><span class="pill pill-warning" style="font-weight:400;">ยังไม่ได้ระบุแหล่งเงิน</span><?php endif; ?></h2>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>สาขา/หลักสูตร</th>
+                <th class="num">วงเงินที่ได้รับ</th>
+                <th class="num">แบ่งเป็นรายการงบ</th>
+                <th class="num">ยังแบ่งได้อีก</th>
+                <th class="num">เบิกจ่ายแล้ว</th>
+                <th class="num">คงเหลือ</th>
+                <th class="num">% เบิกจ่าย</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($blk['rows'] as $r): ?>
+                <tr>
+                  <td><?= htmlspecialchars($r['name'], ENT_QUOTES) ?></td>
+                  <td class="num"><?= $limitCell($r['limit']) ?></td>
+                  <td class="num"><?= htmlspecialchars(bpm_money($r['allocated']), ENT_QUOTES) ?></td>
+                  <td class="num"><?= $remCell($r['unallocated']) ?></td>
+                  <td class="num"><?= htmlspecialchars(bpm_money($r['spent']), ENT_QUOTES) ?></td>
+                  <td class="num"><?= $remCell($r['balance']) ?></td>
+                  <td class="num"><?= number_format($r['spent_pct'], 1) ?>%</td>
+                </tr>
+              <?php endforeach; ?>
+              <tr style="border-top:2px solid var(--border-subtle); font-weight:600;">
+                <td>รวม<?= count($blk['rows']) > 1 ? 'ทั้งหมด' : '' ?></td>
+                <td class="num"><?= $limitCell($t['limit']) ?></td>
+                <td class="num"><?= htmlspecialchars(bpm_money($t['allocated']), ENT_QUOTES) ?></td>
+                <td class="num"><?= $remCell($t['unallocated']) ?></td>
+                <td class="num"><?= htmlspecialchars(bpm_money($t['spent']), ENT_QUOTES) ?></td>
+                <td class="num"><?= $remCell($t['balance']) ?></td>
+                <td class="num"><?= number_format($t['spent_pct'], 1) ?>%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <?php if ($blk['source_total'] !== null && $selectedDepartmentId === null): ?>
+          <p class="text-muted small" style="margin-top:10px;">วงเงินทั้งก้อนของแหล่งเงินที่ตั้งไว้ <?= htmlspecialchars(bpm_money($blk['source_total']), ENT_QUOTES) ?></p>
+        <?php endif; ?>
+      </div>
+    <?php endforeach; ?>
+    <p class="text-muted small">"แบ่งเป็นรายการงบ" = ผลรวมงบต้นปีของรายการงบที่เปิดใช้งาน · "ยังแบ่งได้อีก" = วงเงินที่ได้รับ − แบ่งเป็นรายการงบ · "คงเหลือ" = แบ่งเป็นรายการงบ − เบิกจ่ายแล้ว</p>
   <?php else:
     $items = bpm_report_line_items($selectedDepartmentId, (int) $fiscalYear['id']);
-    $tabQs = static fn (?int $deptId) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'view' => 'table', 'group' => $_GET['group'] ?? null, 'dept' => $deptId], static fn ($v) => $v !== null && $v !== ''));
-    $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'view' => 'table', 'dept' => $_GET['dept'] ?? null, 'group' => $groupId], static fn ($v) => $v !== null && $v !== '')); ?>
+    if ($selectedSourceId !== null) {
+        $items = array_values(array_filter($items, static fn ($it) => (int) $it['fund_source_id'] === $selectedSourceId));
+    }
+    $tabQs = static fn (?int $deptId) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'view' => 'table', 'group' => $_GET['group'] ?? null, 'source' => $_GET['source'] ?? null, 'dept' => $deptId], static fn ($v) => $v !== null && $v !== ''));
+    $groupTabQs = static fn (?int $groupId) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'view' => 'table', 'dept' => $_GET['dept'] ?? null, 'source' => $_GET['source'] ?? null, 'group' => $groupId], static fn ($v) => $v !== null && $v !== ''));
+    $sourceTabQs = static fn (?int $sid) => http_build_query(array_filter(['fy' => $_GET['fy'] ?? null, 'view' => 'table', 'dept' => $_GET['dept'] ?? null, 'group' => $_GET['group'] ?? null, 'source' => $sid], static fn ($v) => $v !== null && $v !== ''));
+    $sourcesInUse = [];
+    if (bpm_multiple_fund_sources()) {
+        $sq = bpm_db()->prepare('SELECT DISTINCT fs.id, fs.name FROM budget_line_items li JOIN fund_sources fs ON fs.id = li.fund_source_id WHERE li.fiscal_year_id = ? AND li.is_active = 1 ORDER BY fs.id');
+        $sq->execute([(int) $fiscalYear['id']]);
+        $sourcesInUse = $sq->fetchAll();
+    } ?>
     <div class="card">
       <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto;">
         <?php foreach (bpm_all_departments() as $d): ?>
@@ -155,6 +239,18 @@ $exportQs = $baseQs(['view' => $view]);
         <?php endforeach; ?>
       </div>
     </div>
+
+    <?php if (!empty($sourcesInUse)): ?>
+    <div class="card">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto; align-items:center;">
+        <span class="text-muted small" style="margin-right:2px;">แหล่งเงิน:</span>
+        <a href="?<?= $sourceTabQs(null) ?>" class="filter-chip" style="<?= $selectedSourceId === null ? 'background:var(--accent); color:#fff;' : '' ?>">ทั้งหมด</a>
+        <?php foreach ($sourcesInUse as $sr): ?>
+          <a href="?<?= $sourceTabQs((int) $sr['id']) ?>" class="filter-chip" style="<?= $selectedSourceId === (int) $sr['id'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($sr['name'], ENT_QUOTES) ?></a>
+        <?php endforeach; ?>
+      </div>
+    </div>
+    <?php endif; ?>
 
     <div class="card">
       <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto; align-items:center;">

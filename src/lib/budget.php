@@ -140,38 +140,98 @@ function bpm_all_fund_sources(): array
 }
 
 /**
- * สรุปตามแหล่งเงิน: จัดสรร (งบต้นปี) / เบิกจ่ายแล้ว / คงเหลือ ของสาขา(หรือทุกสาขา)+ปีงบหนึ่ง
- * โยกย้ายงบข้ามแหล่งเงินไม่ได้ ดังนั้นผลรวมงบต้นปีต่อแหล่งเงินคือวงเงินจริงของแหล่งนั้นเสมอ (โอนในสาขาหักล้างกันเอง)
+ * รายงานแหล่งเงิน → สาขา ของปีงบหนึ่ง: วงเงินที่ได้รับ / แบ่งเป็นรายการงบแล้ว / ยังแบ่งได้อีก / เบิกจ่ายแล้ว / คงเหลือ / % เบิกจ่าย
+ * 1 แถวต่อ (แหล่งเงิน × สาขา) ที่มีวงเงินหรือรายการงบ — ถ้า $departmentId ไม่ null จะเหลือเฉพาะสาขานั้น
+ * allocated = SUM(starting_amount) ของรายการงบที่ active (โยกย้ายข้ามแหล่งเงินไม่ได้ ภายในสาขา+แหล่งเดียวกันโอนหักล้างกันเอง จึงใช้งบต้นปีได้)
+ * spent = เบิกจ่าย − รายรับ; balance = allocated − spent; limit/unallocated = null ถ้ายังไม่ได้ตั้งวงเงินของสาขานั้น
+ * แหล่งเงิน UNSPECIFIED แสดงเฉพาะเมื่อมีรายการงบอยู่ในนั้นจริง
  */
-function bpm_fund_source_summary(?int $departmentId, int $fiscalYearId): array
+function bpm_report_fund_sources(?int $departmentId, int $fiscalYearId): array
 {
-    $params = [$fiscalYearId];
-    $deptFilter = '';
-    if ($departmentId !== null) {
-        $deptFilter = ' AND li.department_id = ?';
-        $params[] = $departmentId;
-    }
+    $db = bpm_db();
+    $deptFilter = $departmentId !== null ? ' AND li.department_id = ?' : '';
+    $params = $departmentId !== null ? [$fiscalYearId, $departmentId] : [$fiscalYearId];
 
-    $stmt = bpm_db()->prepare(
-        "SELECT fs.id, fs.name, fs.code,
+    $stmt = $db->prepare(
+        "SELECT li.fund_source_id, li.department_id,
             COALESCE(SUM(li.starting_amount), 0) AS allocated,
             COALESCE(SUM(tx_exp.amt), 0) - COALESCE(SUM(tx_inc.amt), 0) AS spent
-         FROM fund_sources fs
-         JOIN budget_line_items li ON li.fund_source_id = fs.id AND li.fiscal_year_id = ? AND li.is_active = 1{$deptFilter}
+         FROM budget_line_items li
          LEFT JOIN (SELECT line_item_id AS id, SUM(amount) AS amt FROM transactions WHERE type = 'EXPENSE' GROUP BY line_item_id) tx_exp ON tx_exp.id = li.id
          LEFT JOIN (SELECT line_item_id AS id, SUM(amount) AS amt FROM transactions WHERE type = 'INCOME' GROUP BY line_item_id) tx_inc ON tx_inc.id = li.id
-         GROUP BY fs.id, fs.name, fs.code
-         ORDER BY fs.id"
+         WHERE li.fiscal_year_id = ? AND li.is_active = 1{$deptFilter}
+         GROUP BY li.fund_source_id, li.department_id"
     );
     $stmt->execute($params);
-
-    $rows = [];
+    $cells = [];
     foreach ($stmt->fetchAll() as $r) {
-        $allocated = (float) $r['allocated'];
-        $spent = (float) $r['spent'];
-        $rows[] = $r + ['balance' => $allocated - $spent, 'spent_pct' => $allocated > 0 ? ($spent / $allocated) * 100 : 0.0];
+        $cells[(int) $r['fund_source_id']][(int) $r['department_id']] = ['allocated' => (float) $r['allocated'], 'spent' => (float) $r['spent']];
     }
-    return $rows;
+
+    $limitStmt = $db->prepare('SELECT fund_source_id, department_id, amount FROM fund_dept_budgets WHERE fiscal_year_id = ?' . ($departmentId !== null ? ' AND department_id = ?' : ''));
+    $limitStmt->execute($params);
+    $limits = [];
+    foreach ($limitStmt->fetchAll() as $r) {
+        $limits[(int) $r['fund_source_id']][(int) $r['department_id']] = (float) $r['amount'];
+    }
+
+    $totalStmt = $db->prepare('SELECT fund_source_id, amount FROM fund_source_budgets WHERE fiscal_year_id = ?');
+    $totalStmt->execute([$fiscalYearId]);
+    $sourceTotals = $totalStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    $deptNames = array_column(bpm_all_departments(), 'name', 'id');
+    $result = [];
+    foreach ($db->query('SELECT * FROM fund_sources ORDER BY id')->fetchAll() as $src) {
+        $sid = (int) $src['id'];
+        $deptIds = array_unique(array_merge(array_keys($cells[$sid] ?? []), array_keys($limits[$sid] ?? [])));
+        if (empty($deptIds)) {
+            continue;
+        }
+        if (!$src['is_active'] && empty($cells[$sid])) {
+            continue;
+        }
+        usort($deptIds, static fn ($a, $b) => strcmp((string) ($deptNames[$a] ?? ''), (string) ($deptNames[$b] ?? '')));
+
+        $rows = [];
+        $tot = ['limit' => null, 'allocated' => 0.0, 'spent' => 0.0];
+        foreach ($deptIds as $did) {
+            $limit = $limits[$sid][$did] ?? null;
+            $alloc = $cells[$sid][$did]['allocated'] ?? 0.0;
+            $spent = $cells[$sid][$did]['spent'] ?? 0.0;
+            $rows[] = [
+                'department_id' => $did, 'name' => $deptNames[$did] ?? '',
+                'limit' => $limit, 'allocated' => $alloc, 'unallocated' => $limit === null ? null : $limit - $alloc,
+                'spent' => $spent, 'balance' => $alloc - $spent, 'spent_pct' => $alloc > 0 ? ($spent / $alloc) * 100 : 0.0,
+            ];
+            if ($limit !== null) {
+                $tot['limit'] = ($tot['limit'] ?? 0.0) + $limit;
+            }
+            $tot['allocated'] += $alloc;
+            $tot['spent'] += $spent;
+        }
+        $tot['unallocated'] = $tot['limit'] === null ? null : $tot['limit'] - $tot['allocated'];
+        $tot['balance'] = $tot['allocated'] - $tot['spent'];
+        $tot['spent_pct'] = $tot['allocated'] > 0 ? ($tot['spent'] / $tot['allocated']) * 100 : 0.0;
+
+        $result[] = ['source' => $src, 'source_total' => isset($sourceTotals[$sid]) ? (float) $sourceTotals[$sid] : null, 'rows' => $rows, 'totals' => $tot];
+    }
+
+    return $result;
+}
+
+/** สรุปตามแหล่งเงิน (รวมทุกสาขาที่เลือก) — ใช้ทำการ์ดบน dashboard: วงเงินที่ได้รับ/แบ่งเป็นรายการแล้ว/เบิกจ่าย/คงเหลือ */
+function bpm_fund_source_summary(?int $departmentId, int $fiscalYearId): array
+{
+    $out = [];
+    foreach (bpm_report_fund_sources($departmentId, $fiscalYearId) as $blk) {
+        $t = $blk['totals'];
+        $out[] = [
+            'id' => (int) $blk['source']['id'], 'name' => $blk['source']['name'], 'code' => $blk['source']['code'],
+            'limit' => $t['limit'], 'unallocated' => $t['unallocated'],
+            'allocated' => $t['allocated'], 'spent' => $t['spent'], 'balance' => $t['balance'], 'spent_pct' => $t['spent_pct'],
+        ];
+    }
+    return $out;
 }
 
 /**

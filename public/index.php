@@ -126,25 +126,34 @@ $deptTabQs = static fn ($deptId) => http_build_query(array_filter([
 
   <?php if (!empty($fundSourceRows)): ?>
     <div class="card">
-      <h2>สรุปตามแหล่งเงิน</h2>
+      <h2>สรุปตามแหล่งเงิน<?= $selectedDepartmentId !== null ? '' : ' — ทุกสาขา' ?></h2>
       <table class="data-table">
         <thead>
           <tr>
             <th>แหล่งเงิน</th>
-            <th class="num">จัดสรร</th>
+            <th class="num">วงเงินที่ได้รับ</th>
+            <th class="num">แบ่งเป็นรายการงบแล้ว</th>
             <th class="num">เบิกจ่ายแล้ว</th>
             <th class="num">คงเหลือ</th>
             <th class="num">% เบิกจ่าย</th>
+            <th class="center">การแบ่งวงเงิน</th>
           </tr>
         </thead>
         <tbody>
           <?php foreach ($fundSourceRows as $fr): ?>
             <tr>
               <td><?= htmlspecialchars($fr['name'], ENT_QUOTES) ?></td>
+              <td class="num"><?= $fr['limit'] === null ? '<span class="text-muted">—</span>' : htmlspecialchars(bpm_money((float) $fr['limit']), ENT_QUOTES) ?></td>
               <td class="num"><?= htmlspecialchars(bpm_money((float) $fr['allocated']), ENT_QUOTES) ?></td>
               <td class="num"><?= htmlspecialchars(bpm_money((float) $fr['spent']), ENT_QUOTES) ?></td>
               <td class="num" style="<?= $fr['balance'] < 0 ? 'color: var(--status-danger-text);' : '' ?>"><?= htmlspecialchars(bpm_money($fr['balance']), ENT_QUOTES) ?></td>
               <td class="num"><?= number_format($fr['spent_pct'], 1) ?>%</td>
+              <td class="center">
+                <?php if ($fr['unallocated'] === null): ?><span class="text-muted">—</span>
+                <?php elseif (abs($fr['unallocated']) < 0.005): ?><span class="pill pill-success">แบ่งครบ</span>
+                <?php elseif ($fr['unallocated'] > 0): ?><span class="pill pill-warning">เหลือแบ่งได้ <?= htmlspecialchars(bpm_money($fr['unallocated']), ENT_QUOTES) ?></span>
+                <?php else: ?><span class="pill pill-danger">แบ่งเกิน <?= htmlspecialchars(bpm_money(-$fr['unallocated']), ENT_QUOTES) ?></span><?php endif; ?>
+              </td>
             </tr>
           <?php endforeach; ?>
         </tbody>
