@@ -8,7 +8,10 @@ $user = bpm_require_role('ADMIN', 'DEPT_STAFF', 'EXECUTIVE_VIEWER', 'DEPT_HEAD')
 
 $fiscalYear = bpm_resolve_fiscal_year();
 $selectedDepartmentId = bpm_resolve_department_filter($user);
-$view = in_array($_GET['view'] ?? 'table', ['table', 'matrix', 'sources'], true) ? $_GET['view'] : 'table';
+$view = (string) ($_GET['view'] ?? 'table');
+if (!in_array($view, ['table', 'matrix', 'sources'], true)) {
+    $view = 'table';
+}
 // source=<id> กรองแหล่งเงิน (เฉพาะมุมมอง "ตารางรายการ"); ไม่ส่ง = ทุกแหล่งเงิน
 $selectedSourceId = isset($_GET['source']) && $_GET['source'] !== '' ? (int) $_GET['source'] : null;
 // group=<id> เจาะจงกลุ่มหมวด, group=0 = เฉพาะที่ยังไม่ระบุกลุ่ม, ไม่ส่ง group เลย = สรุปรวมทุกหมวด (เฉพาะมุมมอง "ตารางรายการ")
