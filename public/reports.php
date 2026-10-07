@@ -240,6 +240,9 @@ $tableUrl = static fn (array $q): string => '?' . http_build_query(array_filter(
     } ?>
     <div class="card">
       <div style="display:flex; gap:8px; flex-wrap:wrap; overflow-x:auto;">
+        <?php if (!in_array($user['role'], ['DEPT_STAFF', 'DEPT_HEAD'], true)): // ADMIN/EXECUTIVE_VIEWER ดูรวมทุกสาขาได้ — DEPT_STAFF/DEPT_HEAD ถูกล็อกที่สาขาตัวเอง ?>
+          <a href="?<?= $tabQs(null) ?>" class="filter-chip" style="<?= $selectedDepartmentId === null ? 'background:var(--accent); color:#fff;' : '' ?>">ทั้งหมด</a>
+        <?php endif; ?>
         <?php foreach (bpm_all_departments() as $d): ?>
           <a href="?<?= $tabQs((int) $d['id']) ?>" class="filter-chip" style="<?= $selectedDepartmentId === (int) $d['id'] ? 'background:var(--accent); color:#fff;' : '' ?>"><?= htmlspecialchars($d['name'], ENT_QUOTES) ?></a>
         <?php endforeach; ?>
