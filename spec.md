@@ -191,7 +191,7 @@ CREATE TABLE fiscal_years (
 -- กลุ่มหมวดงบ (ใช้แค่จัดกลุ่มเพื่อสรุป/กราฟภาพรวมบน dashboard เท่านั้น — ไม่ใช่ตัวกำหนดการจัดสรรอีกต่อไป ดูเหตุผลในข้อ 6.3)
 CREATE TABLE budget_groups (
   id        INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  name      VARCHAR(100) NOT NULL, -- เช่น ค่าตอบแทน, ค่าใช้สอย, ค่าวัสดุ, ค่าครุภัณฑ์, โครงการ, อื่นๆ
+  name      VARCHAR(100) NOT NULL, -- ปีงบ 2570 ตั้งตามหนังสือแจ้งงบของกองแผนงาน: ค่าจ้างบุคลากร, ค่าตอบแทน, ค่าใช้สอย, ค่าวัสดุ, ค่าสาธารณูปโภค, ค่าครุภัณฑ์, โครงการ (+ อื่นๆ) — ADMIN เพิ่ม/แก้ได้ที่เมนู "กลุ่มหมวดงบ"; ลำดับแสดงเรียงตาม id
   code      VARCHAR(30)  NOT NULL UNIQUE,
   is_active TINYINT(1)   NOT NULL DEFAULT 1 -- ปิดการใช้งานแทนการลบจริง (ดูเหตุผลในข้อ 5.3)
 ) ENGINE=InnoDB;

@@ -248,7 +248,9 @@ INSERT INTO budget_groups (name, code) VALUES
   ('ค่าวัสดุ', 'MATERIALS'),
   ('ค่าครุภัณฑ์', 'EQUIPMENT'),
   ('โครงการ', 'PROJECT'),
-  ('อื่นๆ', 'OTHER');
+  ('อื่นๆ', 'OTHER'),
+  ('ค่าจ้างบุคลากร', 'PERSONNEL'),   -- เพิ่ม ต.ค. 2569 ให้ตรงหมวดในหนังสือแจ้งงบของกองแผนงาน
+  ('ค่าสาธารณูปโภค', 'UTILITIES');
 
 -- แหล่งเงิน: แถวแรกต้องเป็น UNSPECIFIED (id=1) เสมอ เพราะเป็น DEFAULT ของ budget_line_items.fund_source_id
 INSERT INTO fund_sources (name, code) VALUES

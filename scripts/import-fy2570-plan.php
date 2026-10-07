@@ -37,12 +37,17 @@ const DEPT_COLS = [
     8 => 'PHYSIO',    // สรีรวิทยา
 ];
 
+// จัดหมวดตามหนังสือแจ้งงบประมาณของกองแผนงาน (อว 7310/1946, 18 ก.ย. 2569) — ต้องตรงกับ scripts/regroup-fy2570-budget-groups.php
+// (ไม่งั้นรัน import ซ้ำจะย้ายรายการกลับเป็นหมวดเดิม เพราะ ON DUPLICATE KEY UPDATE ตั้ง group_id ใหม่ทุกครั้ง)
+// ลำดับสำคัญ: เช็คจากบนลงล่าง ตัวแรกที่ตรงชนะ
 const GROUP_KEYWORDS = [
-    'COMPENSATION' => ['ค่าตอบแทน', 'ค่าจ้าง', 'ประจำตำแหน่ง', 'ประกันสังคม'],
+    'PERSONNEL'    => ['ค่าจ้างลูกจ้าง'],
+    'UTILITIES'    => ['ไปรษณีย์', 'โทรศัพท์'],
+    'COMPENSATION' => ['ค่าตอบแทน', 'ประจำตำแหน่ง', 'ค่าปฏิบัติงานนอกเวลา'],
     'MATERIALS'    => ['ค่าวัสดุ', 'วัสดุ'],
     'EQUIPMENT'    => ['ครุภัณฑ์'],
-    'PROJECT'      => ['โครงการ'],
-    'OPERATING'    => ['ค่าใช้สอย', 'ค่าจัดประชุม', 'ค่าซ่อมแซม', 'ค่าเบี้ยเลี้ยง', 'ค่าปฏิบัติงานนอกเวลา', 'ไปรษณีย์', 'โทรศัพท์', 'ค่าใช้จ่ายในการจัดประชุม', 'ค่าเช่า', 'ค่ารถตู้'],
+    'PROJECT'      => ['โครงการ', 'แลกเปลี่ยนเรียนรู้'],
+    'OPERATING'    => ['ค่าใช้สอย', 'ค่าจัดประชุม', 'ค่าซ่อมแซม', 'ค่าเบี้ยเลี้ยง', 'ประกันสังคม', 'ค่าใช้จ่ายในการจัดประชุม', 'ค่าเช่า', 'ค่ารถตู้'],
 ];
 
 function map_group(string $name): string
@@ -55,6 +60,22 @@ function map_group(string $name): string
         }
     }
     return 'OTHER';
+}
+
+// ชื่อในไฟล์ Excel ของงานแผนที่ไม่ตรงกับหนังสือแจ้งงบ/ระบบมหาวิทยาลัย — ใช้ชื่อตามหนังสือ (ขึ้นต้นด้วยคำเหล่านี้ => ชื่อใหม่)
+// ต้องตรงกับ scripts/rename-fy2570-line-items.php (ไม่งั้นรัน import ซ้ำจะสร้างรายการชื่อเดิมกลับมาซ้ำ)
+const NAME_FIXES = [
+    'โครงการพัฒนาศักยภาพบุคลากรสายวิชาการ' => 'โครงการสนับสนุนงานวิจัยแนวหน้า และนวัตกรรมเชิงพาณิชย์',
+];
+
+function fix_name(string $name): string
+{
+    foreach (NAME_FIXES as $prefix => $fixed) {
+        if (str_starts_with($name, $prefix)) {
+            return $fixed;
+        }
+    }
+    return $name;
 }
 
 function is_travel_line(string $name): bool
@@ -112,7 +133,7 @@ $highestRow = $sheet->getHighestRow();
 
 for ($r = 2; $r <= $highestRow; $r++) {
     $seq = $sheet->getCell([1, $r])->getValue();
-    $name = trim((string) $sheet->getCell([2, $r])->getValue());
+    $name = fix_name(trim((string) $sheet->getCell([2, $r])->getValue()));
 
     if ($name === '' || !is_numeric($seq)) {
         continue; // ข้ามแถวว่าง/แถวรวม ("รวมงบประมาณ" ที่ col A ไม่ใช่ตัวเลข)
