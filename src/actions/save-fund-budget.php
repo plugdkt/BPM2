@@ -106,6 +106,11 @@ try {
 }
 
 $warnings = bpm_fund_overage_warnings($fiscalYearId, $fundSourceId, $departmentId > 0 ? $departmentId : null);
+foreach (bpm_fund_envelope_overview($fiscalYearId) as $env) {
+    if ((int) $env['source']['id'] === $fundSourceId && $env['dept_remaining'] !== null && $env['dept_remaining'] < 0) {
+        $warnings[] = sprintf('วงเงินที่ตั้งให้สาขารวม %s เกินวงเงินทั้งก้อน %s บาท', number_format($env['dept_planned'], 2), number_format(-$env['dept_remaining'], 2));
+    }
+}
 if (!empty($warnings)) {
     bpm_flash_set('warning', 'บันทึกวงเงินแล้ว แต่ ' . implode(' / ', $warnings));
 } else {

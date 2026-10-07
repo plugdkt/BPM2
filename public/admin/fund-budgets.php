@@ -77,17 +77,19 @@ require __DIR__ . '/../../src/partials/layout_start.php';
               <input type="text" inputmode="decimal" name="amount" class="field num" style="width:200px;" value="<?= $num($env['total']) ?>" placeholder="ยังไม่ตั้ง" <?= $fyClosed ? 'disabled' : '' ?>>
             </div>
             <?php if (!$fyClosed): ?><button type="submit" class="btn btn-primary" style="padding:8px 14px;">บันทึกวงเงิน</button><?php endif; ?>
-            <div class="small" style="padding-bottom:8px;">
-              แบ่งให้สาขาแล้ว <strong><?= htmlspecialchars(bpm_money($env['allocated']), ENT_QUOTES) ?></strong>
-              · ยังจัดสรรได้อีก <?= $remainingCell($env['remaining']) ?>
+            <div class="small" style="padding-bottom:8px; line-height:1.7;">
+              <div>ตั้งวงเงินให้สาขาแล้ว <strong><?= htmlspecialchars(bpm_money($env['dept_planned']), ENT_QUOTES) ?></strong>
+                · ยังแบ่งให้สาขาได้อีก
+                <?php if ($env['dept_remaining'] === null): ?><span class="text-muted">— (ตั้งวงเงินทั้งก้อนก่อนจึงจะคำนวณให้)</span>
+                <?php else: ?><strong><?= $remainingCell($env['dept_remaining']) ?></strong><?php endif; ?></div>
+              <div class="text-muted">แบ่งเป็นรายการงบของสาขาแล้ว <?= htmlspecialchars(bpm_money($env['allocated']), ENT_QUOTES) ?></div>
             </div>
           </form>
         <?php endif; ?>
 
         <?php if (!$isUnspecified): ?>
           <h3 style="font-size:14px; margin:6px 0;">วงเงินที่แต่ละสาขา/หลักสูตรได้รับ
-            <span class="text-muted small" style="font-weight:400;">· รวมที่ตั้งไว้ <?= htmlspecialchars(bpm_money($env['dept_planned']), ENT_QUOTES) ?>
-              <?php if ($env['total'] !== null && $env['dept_planned'] > $env['total']): ?> · <span class="pill pill-danger">เกินวงเงินทั้งก้อน</span><?php endif; ?></span>
+            <?php if ($env['total'] !== null && $env['dept_planned'] > $env['total']): ?><span class="pill pill-danger" style="font-weight:400;">ตั้งให้สาขารวมเกินวงเงินทั้งก้อน</span><?php endif; ?>
           </h3>
           <table class="data-table" style="margin-bottom:18px;">
             <thead>
@@ -95,7 +97,7 @@ require __DIR__ . '/../../src/partials/layout_start.php';
                 <th>สาขา/หลักสูตร</th>
                 <th class="num" style="width:200px;">วงเงินที่ได้รับ (บาท)</th>
                 <th class="num">แบ่งเป็นรายการงบแล้ว</th>
-                <th class="num">ยังจัดสรรได้อีก</th>
+                <th class="num">ยังแบ่งเป็นรายการได้อีก</th>
                 <th style="width:90px;"></th>
               </tr>
             </thead>

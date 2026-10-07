@@ -552,6 +552,7 @@ function bpm_fund_envelope_overview(int $fiscalYearId): array
             'source'       => $src,
             'total'        => $total,
             'dept_planned' => array_sum($deptBudgetMap[$sid] ?? []), // ผลรวมวงเงินที่ตั้งให้รายสาขา
+            'dept_remaining' => $total === null ? null : $total - array_sum($deptBudgetMap[$sid] ?? []), // วงเงินทั้งก้อนที่ยังไม่ได้แบ่งให้สาขา
             'allocated'    => $srcAllocated,
             'remaining'    => $total === null ? null : $total - $srcAllocated,
             'departments'  => $deptRows,
