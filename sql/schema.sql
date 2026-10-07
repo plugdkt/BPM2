@@ -126,6 +126,27 @@ CREATE TABLE budget_line_items (
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------------------------
+-- รายละเอียดของรายการงบกลุ่มครุภัณฑ์ (group code = 'EQUIPMENT'): ซื้ออะไร กี่หน่วย ราคาต่อหน่วย รวมเท่าไหร่
+-- amount = quantity x unit_price (คำนวณตอนบันทึก) ใช้เทียบกับงบต้นปีของรายการ — ไม่ใช่ธุรกรรมการเงิน ไม่กระทบยอดคงเหลือ
+-- ไม่ลบจริง ใช้ is_active ปิดการใช้งาน
+-- ----------------------------------------------------------------------------
+CREATE TABLE line_item_details (
+  id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  line_item_id INT UNSIGNED NOT NULL,
+  name         VARCHAR(255) NOT NULL,
+  quantity     DECIMAL(12,2) NOT NULL DEFAULT 1,
+  unit         VARCHAR(30)  NULL,
+  unit_price   DECIMAL(14,2) NOT NULL DEFAULT 0,
+  amount       DECIMAL(14,2) NOT NULL DEFAULT 0,
+  note         VARCHAR(500) NULL,
+  is_active    TINYINT(1)   NOT NULL DEFAULT 1,
+  created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_lid_item (line_item_id),
+  CONSTRAINT fk_lid_item FOREIGN KEY (line_item_id) REFERENCES budget_line_items(id)
+) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------------------------
 -- รายการเบิกจ่าย/รายรับ ผูกกับ line item หนึ่งรายการ
 -- ----------------------------------------------------------------------------
 CREATE TABLE transactions (

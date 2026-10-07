@@ -77,6 +77,7 @@ if (!isset($sourceTabs[$selectedSourceId])) {
 }
 $shownLineItems = array_values(array_filter($lineItems, static fn ($li) => (int) $li['fund_source_id'] === $selectedSourceId));
 $shownInactive = array_values(array_filter($inactiveLineItems, static fn ($li) => (int) $li['fund_source_id'] === $selectedSourceId));
+$detailTotals = bpm_line_item_detail_totals(array_map('intval', array_column($shownLineItems, 'id'))); // สรุปรายละเอียดครุภัณฑ์ต่อรายการ
 $sourceTabQs = static fn (int $sid) => http_build_query(array_filter(['dept' => $departmentId, 'fy' => $fiscalYearId ?: null, 'source' => $sid]));
 
 require __DIR__ . '/../../src/partials/layout_start.php';
@@ -207,7 +208,16 @@ require __DIR__ . '/../../src/partials/layout_start.php';
         <tbody>
           <?php foreach ($shownLineItems as $li): $fid = 'li-form-' . (int) $li['id']; $tfid = 'li-toggle-' . (int) $li['id']; ?>
             <tr>
-              <td><input type="text" name="name" form="<?= $fid ?>" class="field" value="<?= htmlspecialchars($li['name'], ENT_QUOTES) ?>" required></td>
+              <td>
+                <input type="text" name="name" form="<?= $fid ?>" class="field" value="<?= htmlspecialchars($li['name'], ENT_QUOTES) ?>" required>
+                <?php if (bpm_group_supports_details($li['group_id'] !== null ? (int) $li['group_id'] : null)):
+                  $dt = $detailTotals[(int) $li['id']] ?? null; $dtMatch = $dt !== null && abs($dt['total'] - (float) $li['starting_amount']) < 0.005; ?>
+                  <a class="small" href="<?= htmlspecialchars(bpm_url('admin/line-item-details.php?item=' . (int) $li['id']), ENT_QUOTES) ?>" style="display:inline-block; margin-top:4px;">
+                    <?= $dt === null ? '+ เพิ่มรายละเอียดครุภัณฑ์' : 'รายละเอียดครุภัณฑ์ (' . $dt['count'] . ' รายการ · รวม ' . htmlspecialchars(bpm_money($dt['total']), ENT_QUOTES) . ')' ?>
+                  </a>
+                  <?php if ($dt !== null): ?><span class="pill <?= $dtMatch ? 'pill-success' : 'pill-warning' ?>" style="font-size:11px;"><?= $dtMatch ? 'ตรงงบต้นปี' : 'ไม่ตรงงบต้นปี' ?></span><?php endif; ?>
+                <?php endif; ?>
+              </td>
               <td><select name="fund_source_id" form="<?= $fid ?>" class="field"><?php $renderSourceOptions($fundSources, (int) $li['fund_source_id']); ?></select></td>
               <td><input type="text" name="starting_amount" form="<?= $fid ?>" class="field num" value="<?= number_format((float) $li['starting_amount'], 2, '.', '') ?>" required></td>
               <td>

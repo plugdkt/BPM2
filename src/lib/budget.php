@@ -93,6 +93,32 @@ function bpm_li_label(array $li): string
     return ($code === 'UNSPECIFIED' || !bpm_multiple_fund_sources()) ? (string) $li['name'] : $li['name'] . ' [' . $li['fund_source_name'] . ']';
 }
 
+/** รายการงบกลุ่ม "ค่าครุภัณฑ์" (budget_groups.code = EQUIPMENT) เพิ่มรายละเอียดได้ว่าซื้ออะไร จำนวน ราคาต่อหน่วย (line_item_details) */
+function bpm_group_supports_details(?int $groupId): bool
+{
+    static $equipmentGroupIds = null;
+    if ($equipmentGroupIds === null) {
+        $equipmentGroupIds = array_map('intval', bpm_db()->query("SELECT id FROM budget_groups WHERE code = 'EQUIPMENT'")->fetchAll(PDO::FETCH_COLUMN));
+    }
+    return $groupId !== null && in_array($groupId, $equipmentGroupIds, true);
+}
+
+/** จำนวนรายการย่อยและยอดรวมของรายละเอียด (เฉพาะที่ active) แยกตาม line item — คืน [line_item_id => ['count' => n, 'total' => x]] */
+function bpm_line_item_detail_totals(array $lineItemIds): array
+{
+    if (empty($lineItemIds)) {
+        return [];
+    }
+    $in = implode(',', array_fill(0, count($lineItemIds), '?'));
+    $stmt = bpm_db()->prepare("SELECT line_item_id, COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total FROM line_item_details WHERE is_active = 1 AND line_item_id IN ({$in}) GROUP BY line_item_id");
+    $stmt->execute(array_values($lineItemIds));
+    $out = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $out[(int) $r['line_item_id']] = ['count' => (int) $r['cnt'], 'total' => (float) $r['total']];
+    }
+    return $out;
+}
+
 /** รายการ line item ที่ยัง active ของสาขา+ปีงบหนึ่ง เรียงตามชื่อ — ใช้ประกอบ dropdown/autocomplete (มี fund_source_name/code ติดมาด้วย) */
 function bpm_line_items_for_department(int $departmentId, int $fiscalYearId): array
 {
@@ -568,6 +594,7 @@ const BPM_AUDIT_ACTION_LABELS = [
     'USER_PRE_PROVISION' => 'เพิ่มผู้ใช้ล่วงหน้า',
     'USER_ROLE_CHANGE'   => 'เปลี่ยนสิทธิ์ผู้ใช้',
     'FISCAL_YEAR_CLOSE'  => 'ปิดปีงบประมาณ',
+    'LINE_ITEM_DETAIL_SAVE' => 'แก้ไขรายละเอียดรายการงบ (ครุภัณฑ์)',
     'FUND_BUDGET_SET'    => 'ตั้ง/แก้วงเงินแหล่งเงิน',
     'FUND_BUDGET_CLEAR'  => 'ยกเลิกวงเงินแหล่งเงิน',
 ];
