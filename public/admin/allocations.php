@@ -27,6 +27,29 @@ $renderSourceOptions = static function (array $sources, int $current): void {
 };
 $lineItems = ($departmentId && $fiscalYearId) ? bpm_line_items_for_department($departmentId, $fiscalYearId) : [];
 
+// สรุปของสาขานี้: (1) วงเงินที่ได้รับจากแต่ละแหล่ง เทียบกับยอดที่แบ่งเป็นรายการงบแล้ว (2) ยอดแยกตามหมวดงบ และรายการที่ยังไม่ระบุหมวด
+$deptFund = [];
+if ($departmentId && $fiscalYearId) {
+    foreach (bpm_fund_envelope_overview($fiscalYearId) as $env) {
+        foreach ($env['departments'] as $dr) {
+            if ((int) $dr['department_id'] === $departmentId && ($dr['budget'] !== null || $dr['allocated'] > 0)) {
+                $deptFund[] = ['source' => $env['source'], 'budget' => $dr['budget'], 'allocated' => $dr['allocated'], 'remaining' => $dr['remaining']];
+            }
+        }
+    }
+}
+$groupNameMap = array_column($groups, 'name', 'id');
+$groupSummary = [];
+$deptTotal = 0.0;
+foreach ($lineItems as $li) {
+    $gid = $li['group_id'] !== null ? (int) $li['group_id'] : 0;
+    $groupSummary[$gid] ??= ['name' => $gid === 0 ? 'ยังไม่ระบุหมวด' : ($groupNameMap[$gid] ?? 'หมวดที่ปิดใช้งานแล้ว'), 'count' => 0, 'total' => 0.0];
+    $groupSummary[$gid]['count']++;
+    $groupSummary[$gid]['total'] += (float) $li['starting_amount'];
+    $deptTotal += (float) $li['starting_amount'];
+}
+uksort($groupSummary, static fn ($a, $b) => ($a === 0 ? PHP_INT_MAX : $a) <=> ($b === 0 ? PHP_INT_MAX : $b));
+
 $inactiveLineItems = [];
 if ($departmentId && $fiscalYearId) {
     $stmt = bpm_db()->prepare(
@@ -69,6 +92,55 @@ require __DIR__ . '/../../src/partials/layout_start.php';
         </form>
         <?php
     }; ?>
+    <div class="two-col">
+      <div class="card" style="flex:1;">
+        <h2>วงเงินที่สาขานี้ได้รับ</h2>
+        <?php if (empty($deptFund)): ?>
+          <p class="text-muted small">ยังไม่ได้ตั้งวงเงินของสาขานี้ — ตั้งที่ขั้นตอน "2. วงเงินแหล่งเงิน"</p>
+        <?php else: ?>
+          <table class="data-table">
+            <thead><tr><th>แหล่งเงิน</th><th class="num">ได้รับ</th><th class="num">แบ่งเป็นรายการแล้ว</th><th class="num">ยังแบ่งได้อีก</th></tr></thead>
+            <tbody>
+              <?php foreach ($deptFund as $f): ?>
+                <tr>
+                  <td><?= htmlspecialchars($f['source']['name'], ENT_QUOTES) ?></td>
+                  <td class="num"><?= $f['budget'] === null ? '<span class="text-muted">ยังไม่ตั้ง</span>' : htmlspecialchars(bpm_money((float) $f['budget']), ENT_QUOTES) ?></td>
+                  <td class="num"><?= htmlspecialchars(bpm_money($f['allocated']), ENT_QUOTES) ?></td>
+                  <td class="num">
+                    <?php if ($f['remaining'] === null): ?><span class="text-muted">—</span>
+                    <?php else: ?><span style="color: <?= $f['remaining'] < 0 ? 'var(--status-danger-text)' : 'var(--status-success-text)' ?>;"><?= htmlspecialchars(bpm_money($f['remaining']), ENT_QUOTES) ?><?= $f['remaining'] < 0 ? ' (เกิน)' : '' ?></span><?php endif; ?>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php endif; ?>
+      </div>
+
+      <div class="card" style="flex:1;">
+        <h2>แบ่งตามหมวดงบ</h2>
+        <?php if (empty($groupSummary)): ?>
+          <p class="text-muted small">ยังไม่มีรายการงบของสาขานี้</p>
+        <?php else: ?>
+          <table class="data-table">
+            <thead><tr><th>หมวดงบ</th><th class="num">รายการ</th><th class="num">งบต้นปีรวม</th></tr></thead>
+            <tbody>
+              <?php foreach ($groupSummary as $gid => $g): ?>
+                <tr<?= $gid === 0 ? ' style="background: var(--status-warning-bg);"' : '' ?>>
+                  <td><?= htmlspecialchars($g['name'], ENT_QUOTES) ?><?= $gid === 0 ? ' <span class="pill pill-warning">ควรระบุหมวด</span>' : '' ?></td>
+                  <td class="num"><?= (int) $g['count'] ?></td>
+                  <td class="num"><?= htmlspecialchars(bpm_money($g['total']), ENT_QUOTES) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+              <tr style="font-weight:600;"><td>รวมทั้งสาขา</td><td class="num"><?= count($lineItems) ?></td><td class="num"><?= htmlspecialchars(bpm_money($deptTotal), ENT_QUOTES) ?></td></tr>
+            </tfoot>
+          </table>
+        <?php endif; ?>
+      </div>
+    </div>
+
     <div class="card">
       <h2>รายการงบ</h2>
 
