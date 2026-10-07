@@ -53,6 +53,50 @@ CREATE TABLE fund_sources (
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------------------------
+-- วงเงินแหล่งเงินต่อปีงบ (ชั้นวางแผนด้านบน): เช่น เงินรายได้ ปีงบ 2570 = 8,000,000 บาท
+-- แล้วแบ่งเป็นวงเงินรายหมวดงบ (fund_group_budgets) ก่อนจัดสรรให้สาขาเป็นรายการงบ (budget_line_items.starting_amount)
+-- ระบบแค่เทียบวงเงินกับยอดที่สาขาถูกจัดสรรไปแล้วและเตือนเมื่อเกิน ไม่ block การบันทึก (ADMIN ตัดสินใจเอง)
+-- ----------------------------------------------------------------------------
+CREATE TABLE fund_source_budgets (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  fiscal_year_id INT UNSIGNED NOT NULL,
+  fund_source_id INT UNSIGNED NOT NULL,
+  amount         DECIMAL(14,2) NOT NULL,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_fsb (fiscal_year_id, fund_source_id),
+  CONSTRAINT fk_fsb_fy     FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_years(id),
+  CONSTRAINT fk_fsb_source FOREIGN KEY (fund_source_id) REFERENCES fund_sources(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE fund_group_budgets (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  fiscal_year_id INT UNSIGNED NOT NULL,
+  fund_source_id INT UNSIGNED NOT NULL,
+  group_id       INT UNSIGNED NOT NULL,
+  amount         DECIMAL(14,2) NOT NULL,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_fgb (fiscal_year_id, fund_source_id, group_id),
+  CONSTRAINT fk_fgb_fy     FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_years(id),
+  CONSTRAINT fk_fgb_source FOREIGN KEY (fund_source_id) REFERENCES fund_sources(id),
+  CONSTRAINT fk_fgb_group  FOREIGN KEY (group_id)       REFERENCES budget_groups(id)
+) ENGINE=InnoDB;
+
+-- วงเงินแหล่งเงินที่แต่ละสาขา/หลักสูตรได้รับ (แหล่งเงิน × สาขา × ปีงบ) — ตรงกับตาราง "งบประมาณที่ได้รับ" ของงานแผน
+-- เทียบกับผลรวม starting_amount ของรายการงบของสาขานั้นในแหล่งเงินนั้น เพื่อดูว่าแบ่งเป็นรายการครบหรือเกินวงเงินหรือไม่
+CREATE TABLE fund_dept_budgets (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  fiscal_year_id INT UNSIGNED NOT NULL,
+  fund_source_id INT UNSIGNED NOT NULL,
+  department_id  INT UNSIGNED NOT NULL,
+  amount         DECIMAL(14,2) NOT NULL,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_fdb (fiscal_year_id, fund_source_id, department_id),
+  CONSTRAINT fk_fdb_fy     FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_years(id),
+  CONSTRAINT fk_fdb_source FOREIGN KEY (fund_source_id) REFERENCES fund_sources(id),
+  CONSTRAINT fk_fdb_dept   FOREIGN KEY (department_id)  REFERENCES departments(id)
+) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------------------------
 -- ผู้ใช้งาน (ยืนยันตัวตนผ่าน MEDSCI ACC SSO — ไม่มีการเก็บรหัสผ่านในตารางนี้)
 -- ----------------------------------------------------------------------------
 CREATE TABLE users (

@@ -63,6 +63,7 @@ $navItems = [
             ['key' => 'admin-departments',   'label' => 'สาขาวิชา',        'href' => bpm_url('admin/departments.php')],
             ['key' => 'admin-budget-groups', 'label' => 'กลุ่มหมวดงบ',     'href' => bpm_url('admin/budget-groups.php')],
             ['key' => 'admin-fund-sources',  'label' => 'แหล่งเงิน',        'href' => bpm_url('admin/fund-sources.php')],
+            ['key' => 'admin-fund-budgets',  'label' => 'วงเงินแหล่งเงิน',  'href' => bpm_url('admin/fund-budgets.php')],
             ['key' => 'admin-fiscal-years',  'label' => 'ปีงบประมาณ',      'href' => bpm_url('admin/fiscal-years.php')],
             ['key' => 'admin-users',         'label' => 'จัดการผู้ใช้',     'href' => bpm_url('admin/users.php')],
             ['key' => 'admin-audit-log',     'label' => 'ประวัติการเปลี่ยนแปลง', 'href' => bpm_url('admin/audit-log.php')],

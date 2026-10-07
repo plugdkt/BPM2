@@ -70,14 +70,27 @@ function bpm_line_item_balance(int $lineItemId, bool $forUpdate = false): array
  */
 function bpm_li_label_sql(string $li = 'li', string $fs = 'fs'): string
 {
+    if (!bpm_multiple_fund_sources()) {
+        return "{$li}.name";
+    }
     return "IF({$fs}.code = 'UNSPECIFIED', {$li}.name, CONCAT({$li}.name, ' [', {$fs}.name, ']'))";
+}
+
+/** มีแหล่งเงินจริง (ไม่นับ UNSPECIFIED) ถูกใช้งานเกิน 1 แหล่งหรือไม่ — ถ้ามีแหล่งเดียว ไม่ต้องต่อท้ายชื่อรายการด้วย [แหล่งเงิน] ให้รก */
+function bpm_multiple_fund_sources(): bool
+{
+    static $multiple = null;
+    if ($multiple === null) {
+        $multiple = (int) bpm_db()->query('SELECT COUNT(DISTINCT fund_source_id) FROM budget_line_items WHERE is_active = 1 AND fund_source_id <> 1')->fetchColumn() > 1;
+    }
+    return $multiple;
 }
 
 /** ป้ายชื่อรายการงบฝั่ง PHP (คู่กับ bpm_li_label_sql) — ต้องมี fund_source_name/code ติดมากับแถวนั้น */
 function bpm_li_label(array $li): string
 {
     $code = $li['fund_source_code'] ?? 'UNSPECIFIED';
-    return $code === 'UNSPECIFIED' ? (string) $li['name'] : $li['name'] . ' [' . $li['fund_source_name'] . ']';
+    return ($code === 'UNSPECIFIED' || !bpm_multiple_fund_sources()) ? (string) $li['name'] : $li['name'] . ' [' . $li['fund_source_name'] . ']';
 }
 
 /** รายการ line item ที่ยัง active ของสาขา+ปีงบหนึ่ง เรียงตามชื่อ — ใช้ประกอบ dropdown/autocomplete (มี fund_source_name/code ติดมาด้วย) */
@@ -461,6 +474,130 @@ function bpm_pending_transfer_count(?int $departmentId = null): int
     return (int) $stmt->fetchColumn();
 }
 
+/**
+ * ภาพรวมวงเงินแหล่งเงิน → หมวดงบ → จัดสรรให้สาขา ของปีงบหนึ่ง (ใช้ทำหน้า admin/fund-budgets.php และ dashboard)
+ * total/cap = null หมายถึงยังไม่ได้ตั้งวงเงิน; allocated = SUM(starting_amount) ของรายการงบที่ active (ยอดที่แบ่งให้สาขาแล้ว)
+ * แหล่งเงิน UNSPECIFIED แสดงเฉพาะเมื่อมีรายการงบอยู่ในนั้นจริง เพื่อให้เห็นว่ามียอดที่ยังไม่ได้ระบุแหล่งเท่าไหร่
+ */
+function bpm_fund_envelope_overview(int $fiscalYearId): array
+{
+    $db = bpm_db();
+
+    $totals = $db->prepare('SELECT fund_source_id, amount FROM fund_source_budgets WHERE fiscal_year_id = ?');
+    $totals->execute([$fiscalYearId]);
+    $totalMap = $totals->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    $caps = $db->prepare('SELECT fund_source_id, group_id, amount FROM fund_group_budgets WHERE fiscal_year_id = ?');
+    $caps->execute([$fiscalYearId]);
+    $capMap = [];
+    foreach ($caps->fetchAll() as $c) {
+        $capMap[(int) $c['fund_source_id']][(int) $c['group_id']] = (float) $c['amount'];
+    }
+
+    $alloc = $db->prepare(
+        'SELECT fund_source_id, COALESCE(group_id, 0) AS gid, SUM(starting_amount) AS amt
+         FROM budget_line_items WHERE fiscal_year_id = ? AND is_active = 1 GROUP BY fund_source_id, COALESCE(group_id, 0)'
+    );
+    $alloc->execute([$fiscalYearId]);
+    $allocMap = [];
+    foreach ($alloc->fetchAll() as $a) {
+        $allocMap[(int) $a['fund_source_id']][(int) $a['gid']] = (float) $a['amt'];
+    }
+
+    $deptBudgets = $db->prepare('SELECT fund_source_id, department_id, amount FROM fund_dept_budgets WHERE fiscal_year_id = ?');
+    $deptBudgets->execute([$fiscalYearId]);
+    $deptBudgetMap = [];
+    foreach ($deptBudgets->fetchAll() as $b) {
+        $deptBudgetMap[(int) $b['fund_source_id']][(int) $b['department_id']] = (float) $b['amount'];
+    }
+
+    $deptAlloc = $db->prepare(
+        'SELECT fund_source_id, department_id, SUM(starting_amount) AS amt
+         FROM budget_line_items WHERE fiscal_year_id = ? AND is_active = 1 GROUP BY fund_source_id, department_id'
+    );
+    $deptAlloc->execute([$fiscalYearId]);
+    $deptAllocMap = [];
+    foreach ($deptAlloc->fetchAll() as $a) {
+        $deptAllocMap[(int) $a['fund_source_id']][(int) $a['department_id']] = (float) $a['amt'];
+    }
+
+    $departments = bpm_all_departments();
+    $groups = $db->query('SELECT id, name FROM budget_groups WHERE is_active = 1 ORDER BY id')->fetchAll();
+    $result = [];
+    foreach ($db->query('SELECT * FROM fund_sources WHERE is_active = 1 ORDER BY id')->fetchAll() as $src) {
+        $sid = (int) $src['id'];
+        $srcAllocated = array_sum($allocMap[$sid] ?? []);
+        if ($src['code'] === 'UNSPECIFIED' && $srcAllocated <= 0) {
+            continue;
+        }
+
+        $rows = [];
+        foreach ($groups as $g) {
+            $gid = (int) $g['id'];
+            $cap = $capMap[$sid][$gid] ?? null;
+            $al = $allocMap[$sid][$gid] ?? 0.0;
+            $rows[] = ['group_id' => $gid, 'name' => $g['name'], 'cap' => $cap, 'allocated' => $al, 'remaining' => $cap === null ? null : $cap - $al];
+        }
+        if (($allocMap[$sid][0] ?? 0.0) > 0) {
+            $rows[] = ['group_id' => 0, 'name' => 'ไม่ระบุหมวด', 'cap' => null, 'allocated' => $allocMap[$sid][0], 'remaining' => null];
+        }
+
+        $deptRows = [];
+        foreach ($departments as $d) {
+            $did = (int) $d['id'];
+            $budget = $deptBudgetMap[$sid][$did] ?? null;
+            $al = $deptAllocMap[$sid][$did] ?? 0.0;
+            if ($budget === null && $al <= 0) {
+                $deptRows[] = ['department_id' => $did, 'name' => $d['name'], 'budget' => null, 'allocated' => 0.0, 'remaining' => null];
+                continue;
+            }
+            $deptRows[] = ['department_id' => $did, 'name' => $d['name'], 'budget' => $budget, 'allocated' => $al, 'remaining' => $budget === null ? null : $budget - $al];
+        }
+
+        $total = isset($totalMap[$sid]) ? (float) $totalMap[$sid] : null;
+        $result[] = [
+            'source'        => $src,
+            'total'         => $total,
+            'planned'       => array_sum($capMap[$sid] ?? []), // ผลรวมวงเงินรายหมวดที่ตั้งไว้
+            'dept_planned'  => array_sum($deptBudgetMap[$sid] ?? []), // ผลรวมวงเงินที่ตั้งให้รายสาขา
+            'allocated'     => $srcAllocated,
+            'remaining'     => $total === null ? null : $total - $srcAllocated,
+            'groups'        => $rows,
+            'departments'   => $deptRows,
+        ];
+    }
+
+    return $result;
+}
+
+/**
+ * ข้อความเตือนเมื่อยอดที่จัดสรรให้สาขาเกินวงเงินที่ตั้งไว้ (ระดับหมวดและระดับแหล่งเงิน) — เตือนอย่างเดียว ไม่ block การบันทึก
+ * $groupId: null/0 = รายการที่ไม่ระบุหมวด (ไม่มีวงเงินรายหมวด เช็คแค่ระดับแหล่งเงิน)
+ */
+function bpm_fund_overage_warnings(int $fiscalYearId, int $fundSourceId, ?int $groupId, ?int $departmentId = null): array
+{
+    $warnings = [];
+    foreach (bpm_fund_envelope_overview($fiscalYearId) as $env) {
+        if ((int) $env['source']['id'] !== $fundSourceId) {
+            continue;
+        }
+        foreach ($env['departments'] as $d) {
+            if ($departmentId !== null && (int) $d['department_id'] === $departmentId && $d['remaining'] !== null && $d['remaining'] < 0) {
+                $warnings[] = sprintf('"%s" ได้รับ%s เพียง %s แต่แบ่งเป็นรายการงบแล้ว %s (เกิน %s บาท)', $d['name'], $env['source']['name'], number_format((float) $d['budget'], 2), number_format($d['allocated'], 2), number_format(-$d['remaining'], 2));
+            }
+        }
+        if ($env['remaining'] !== null && $env['remaining'] < 0) {
+            $warnings[] = sprintf('ยอดที่จัดสรรให้สาขาของ "%s" เกินวงเงินแหล่งเงิน %s บาท', $env['source']['name'], number_format(-$env['remaining'], 2));
+        }
+        foreach ($env['groups'] as $g) {
+            if ((int) $g['group_id'] === (int) $groupId && $g['remaining'] !== null && $g['remaining'] < 0) {
+                $warnings[] = sprintf('หมวด "%s" ของ "%s" จัดสรรเกินวงเงินหมวด %s บาท', $g['name'], $env['source']['name'], number_format(-$g['remaining'], 2));
+            }
+        }
+    }
+    return $warnings;
+}
+
 const BPM_AUDIT_ACTION_LABELS = [
     'LINE_ITEM_UPDATE'   => 'แก้ไขรายการงบ',
     'TRANSACTION_UPDATE' => 'แก้ไขรายการเบิกจ่าย/รายรับ',
@@ -472,6 +609,8 @@ const BPM_AUDIT_ACTION_LABELS = [
     'USER_PRE_PROVISION' => 'เพิ่มผู้ใช้ล่วงหน้า',
     'USER_ROLE_CHANGE'   => 'เปลี่ยนสิทธิ์ผู้ใช้',
     'FISCAL_YEAR_CLOSE'  => 'ปิดปีงบประมาณ',
+    'FUND_BUDGET_SET'    => 'ตั้ง/แก้วงเงินแหล่งเงิน',
+    'FUND_BUDGET_CLEAR'  => 'ยกเลิกวงเงินแหล่งเงิน',
 ];
 
 /** ป้ายชื่อภาษาไทยของ audit_logs.action — คืนค่า action เดิมถ้าไม่รู้จัก (กันพังถ้ามี action ใหม่ในอนาคต) */
